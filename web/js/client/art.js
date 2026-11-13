@@ -114,8 +114,8 @@ export function charSprite(look, dir, frame) {
     R(4, 1 + oy, 6, 1, shade(hair, 0.25));
     // hats
     if (hat === 1) { // cap
-      const cc = '#e04848';
-      R(3, 0 + oy, 10, 3, cc); R(4, -1 + oy, 8, 1, cc); R(7, 0 + oy, 2, 1, '#ffffff');
+      const cc = '#2bb3a3';
+      R(3, 0 + oy, 10, 3, cc); R(4, -1 + oy, 8, 1, cc); R(7, 0 + oy, 2, 1, '#ffd23f');
       if (dir === 0) R(3, 3 + oy, 10, 1, shade(cc, -0.3));
       else if (dir === 1) R(1, 2 + oy, 4, 1, shade(cc, -0.3));
       else if (dir === 2) R(11, 2 + oy, 4, 1, shade(cc, -0.3));
@@ -141,13 +141,14 @@ export function petSprite(type, evolved, frame) {
     if (type === 'cindkit') {
       const body = evolved ? '#e0632a' : '#f28a3a', belly = '#ffe1b0';
       if (!evolved) {
-        R(2, 6 + b, 2, 2, '#ffd23f'); R(1, 4 + b, 2, 2, '#ff9e2c'); R(2, 3 + b, 1, 1, '#ff5a1f'); // flame tail
+        R(1, 8 + b, 3, 2, body); R(1, 6 + b, 2, 2, body); R(1, 7 + b, 2, 1, '#8a3b12'); // striped tail
+        R(8, 0 + b, 2, 2, '#ffd23f'); R(8, 0 + b, 1, 1, '#ff5a1f'); // ember tuft on the head
         R(4, 7 + b, 9, 6, body); R(6, 9 + b, 5, 4, belly);
         R(5, 2 + b, 8, 6, body); R(5, 1 + b, 2, 2, body); R(11, 1 + b, 2, 2, body); R(6, 2 + b, 1, 1, '#ffb1a1'); R(11, 2 + b, 1, 1, '#ffb1a1');
         R(7, 4 + b, 1, 2, '#25213a'); R(10, 4 + b, 1, 2, '#25213a'); R(8, 6 + b, 2, 1, '#c0392b');
         R(5, 13, 2, 2, shade(body, -0.2)); R(10, 13, 2, 2, shade(body, -0.2));
       } else {
-        R(1, 4 + b, 4, 4, '#ffd23f'); R(0, 2 + b, 3, 3, '#ff7a1f'); R(1, 0 + b, 2, 2, '#ff3d1f');
+        R(1, 10 + b, 4, 3, body); R(0, 7 + b, 3, 3, body); R(0, 8 + b, 3, 1, '#8a3b12'); R(2, 11 + b, 2, 1, '#8a3b12'); // striped tail
         R(5, 9 + b, 13, 8, body); R(8, 12 + b, 7, 5, belly);
         R(8, 2 + b, 11, 9, body); R(8, 0 + b, 3, 3, body); R(16, 0 + b, 3, 3, body);
         R(6, 3 + b, 3, 7, '#ff5a1f'); R(19, 3 + b, 2, 6, '#ff5a1f'); R(7, 2 + b, 2, 2, '#ffd23f'); // flame mane
@@ -158,16 +159,16 @@ export function petSprite(type, evolved, frame) {
     } else if (type === 'puddlo') {
       const body = evolved ? '#2f7fd6' : '#58a9ef', belly = '#d4f1ff';
       if (!evolved) {
-        R(7, 0 + b, 2, 3, '#9fdcff'); R(6, 1 + b, 1, 2, '#9fdcff'); // head fin
+        R(8, 2 + b, 1, 1, '#2a5b9a'); R(7, 0 + b, 3, 2, '#bff0ff'); // droplet antenna
         R(3, 3 + b, 10, 10, body); R(2, 6 + b, 12, 6, body); R(5, 8 + b, 6, 5, belly);
         R(5, 5 + b, 2, 3, '#ffffff'); R(9, 5 + b, 2, 3, '#ffffff'); R(6, 6 + b, 1, 2, '#25213a'); R(10, 6 + b, 1, 2, '#25213a');
         R(7, 9 + b, 2, 1, '#2a5b9a');
-        R(12, 11 + b, 3, 2, '#9fdcff'); // tail fin
+        R(3, 9 + b, 1, 1, '#bff0ff'); R(12, 9 + b, 1, 1, '#bff0ff'); // bubble cheeks
         R(4, 13, 2, 2, shade(body, -0.25)); R(10, 13, 2, 2, shade(body, -0.25));
       } else {
-        R(8, 0 + b, 6, 2, '#9fdcff'); R(6, 1 + b, 3, 3, '#9fdcff'); R(13, 1 + b, 3, 3, '#9fdcff'); // crest
+        R(10, 2 + b, 2, 2, '#1d4a85'); R(9, 0 + b, 4, 2, '#bff0ff'); R(5, 3 + b, 12, 2, '#7fc4f0'); // droplet + shell rim
         R(4, 4 + b, 14, 13, body); R(2, 8 + b, 18, 7, body); R(7, 10 + b, 8, 7, belly);
-        R(0, 9 + b, 3, 4, '#9fdcff'); R(19, 9 + b, 3, 4, '#9fdcff'); // wave fins
+        R(0, 10 + b, 3, 3, body); R(19, 10 + b, 3, 3, body); // stubby arms
         R(7, 6 + b, 3, 3, '#ffffff'); R(12, 6 + b, 3, 3, '#ffffff'); R(8, 7 + b, 2, 2, '#25213a'); R(13, 7 + b, 2, 2, '#25213a');
         R(9, 11 + b, 4, 1, '#1d4a85');
         R(5, 17, 3, 3, shade(body, -0.25)); R(14, 17, 3, 3, shade(body, -0.25));

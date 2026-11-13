@@ -217,6 +217,7 @@ export class NetGame extends Session {
   }
 
   onMsg(m) {
+    if (this.closed) return;
     if (m.t === 'err') { this.fail(m.msg); return; }
     if (m.t === 'welcome') {
       this.meId = m.id; this.room = m.room; this.mode = m.mode;

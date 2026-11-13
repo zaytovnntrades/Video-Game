@@ -122,6 +122,7 @@ let current = 's-title';
 function show(id) {
   for (const s of document.querySelectorAll('.screen')) s.classList.toggle('hidden', s.id !== id);
   current = id;
+  if (pending && id !== 's-multi') { pending.close(); pending = null; $('mp-go').disabled = false; $('mp-status').textContent = ''; }
   if (id === 's-menu') renderMenu();
   if (id === 's-shop') renderShop();
   if (id === 's-train') renderTrain();
@@ -262,7 +263,7 @@ function renderSettings() {
 }
 tap($('st-sound'), () => { app.profile.settings.sound = !app.profile.settings.sound; setSound(app.profile.settings.sound); app.save(true); renderSettings(); });
 tap($('st-reset'), () => {
-  if (!window.confirm('Delete your trainer and all progress?')) return;
+  if (!window.confirm('Delete your hero and all progress?')) return;
   resetProfile();
   app.profile = defaultProfile();
   $('t-start').textContent = 'Press Start';
@@ -271,6 +272,7 @@ tap($('st-reset'), () => {
 
 // Multiplayer lobby
 let mpMode = 'coop';
+let pending = null;
 function defaultServer() {
   const l = window.location;
   const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
@@ -301,7 +303,6 @@ tap($('mp-go'), () => {
   });
   pending = s;
 });
-let pending = null;
 
 // Pause
 function togglePause() {

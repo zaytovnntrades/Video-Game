@@ -4,6 +4,8 @@
 import { TILE } from '../shared/data.js';
 import { charSprite, petSprite, enemySprite, carSprite, pickupSprite, renderGround, renderMini } from './art.js';
 
+const GROUND_CACHE = new Map();
+
 const BULLET_STYLE = {
   pistol: ['#fff3a0', 3], uzi: ['#ffe066', 2.5], shotgun: ['#ffcf70', 2.5], rifle: ['#ffffff', 3], rocket: ['#ff7a3a', 5],
   fire: ['#ff8a2a', 4], water: ['#6cc8ff', 4], grass: ['#7ee06a', 4], spit: ['#a6e22e', 4.5],
@@ -42,8 +44,16 @@ export class Renderer {
 
   setMap(map) {
     this.map = map;
-    this.ground = renderGround(map);
-    this.mini = renderMini(map);
+    const key = `${map.kind}:${map.seed}`;
+    let c = GROUND_CACHE.get(key);
+    if (!c) {
+      c = { ground: renderGround(map), mini: renderMini(map) };
+      GROUND_CACHE.set(key, c);
+      // keep memory low on iOS: at most the city and one arena
+      if (GROUND_CACHE.size > 2) GROUND_CACHE.delete(GROUND_CACHE.keys().next().value); // oldest; never the one just added
+    }
+    this.ground = c.ground;
+    this.mini = c.mini;
     this.parts = [];
     this.texts = [];
   }
