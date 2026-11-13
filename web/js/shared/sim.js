@@ -773,9 +773,21 @@ export class World {
       e: this.enemies.map((e) => [e.id, ENEMY_ORDER.indexOf(e.type), r(e.x), r(e.y), r(e.ang * 10) / 10, Math.max(1, r((e.hp / e.maxHp) * 100)), e.boss ? 1 : 0]),
       b: this.bullets.map((b) => [b.id, r(b.x), r(b.y), BULLET_KINDS.indexOf(b.kind)]),
       k: this.pickups.map((k) => [k.id, r(k.x), r(k.y), k.kind]),
+      c: this.cars.map((c) => [c.id, r(c.x), r(c.y), r(c.ang * 100) / 100, c.color, c.driver]),
       w: this.wave,
       left: this.enemies.length + this.toSpawn.length,
       rd: this.mode === 'pvp' ? [this.round.over ? 1 : 0, this.round.winner, this.round.goal] : null,
+    };
+  }
+
+  // Private per-player info (ammo is not in the shared snapshot).
+  // -1 = unlimited, -2 = not owned. JSON cannot carry Infinity.
+  privateFor(pid) {
+    const p = this.byId(pid);
+    if (!p) return null;
+    return {
+      ammo: WEAPON_ORDER.map((w) => (!p.weapons.includes(w) ? -2 : p.ammo[w] === Infinity ? -1 : p.ammo[w])),
+      wpn: p.wpn, car: p.car, respawn: p.dead ? Math.max(0, Math.ceil(p.respawn)) : 0,
     };
   }
 

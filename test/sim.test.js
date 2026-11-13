@@ -44,6 +44,7 @@ test('xp curve, level ups and loadout sanitizing', () => {
   assert.equal(bad.level, 50);
   assert.ok(bad.name.length <= 12 && !/[<>]/.test(bad.name));
   assert.deepEqual(bad.weapons, ['pistol', 'rocket']);
+  assert.deepEqual(sanitizeLoadout({ level: 1, weapons: ['rocket', 'uzi'] }).weapons, ['pistol'], 'weapons are level gated');
   assert.equal(bad.companion, 'cindkit');
   assert.deepEqual([bad.look.skin, bad.look.hair], [4, 0]);
   const cheat = sanitizeLoadout({ level: 2, stats: { pow: 20, vit: 20, agi: 20 } });
@@ -85,6 +86,7 @@ test('city: enemies path around buildings to reach the player', () => {
   const d0 = Math.hypot(e.x - p.x, e.y - p.y);
   p.hp = p.maxHp = 1e6;
   p.pet.cd = 1e9; // keep the companion from killing it on the way
+  assert.equal(w.clearLine(e, p, e.r), false, 'no straight line: flow field must be used');
   let d1 = Infinity;
   run(w, 25, () => { d1 = Math.min(d1, Math.hypot(e.x - p.x, e.y - p.y)); });
   assert.equal(e.dead, undefined);
@@ -247,4 +249,7 @@ test('weapons: ammo drains and falls back to pistol; rocket explodes; rifle pier
   const s = JSON.parse(JSON.stringify(w.snapshot()));
   assert.equal(s.p.length, 1);
   assert.ok(s.p[0].every((v) => v !== null), 'snapshot has no NaN/Infinity');
+  const priv = JSON.parse(JSON.stringify(w.privateFor(p.id)));
+  assert.equal(priv.ammo[0], -1, 'pistol is unlimited');
+  assert.ok(priv.ammo.every((v) => Number.isInteger(v)));
 });

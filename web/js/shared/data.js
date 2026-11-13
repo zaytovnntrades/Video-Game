@@ -82,7 +82,7 @@ export function sanitizeLoadout(l) {
   }
   if (sum > level - 1) stats = { pow: 0, vit: 0, agi: 0 };
   const owned = Array.isArray(l.weapons) ? l.weapons : [];
-  const weapons = WEAPON_ORDER.filter((w) => w === 'pistol' || owned.includes(w));
+  const weapons = WEAPON_ORDER.filter((w) => w === 'pistol' || (owned.includes(w) && WEAPONS[w].lvl <= level));
   let name = String(l.name == null ? '' : l.name).replace(/[^\w \-]/g, '').trim().slice(0, 12);
   if (!name) name = 'Rookie';
   const companion = CREATURES[l.companion] ? l.companion : 'cindkit';
