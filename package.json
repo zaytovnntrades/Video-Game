@@ -1,0 +1,17 @@
+{
+  "name": "monstreets",
+  "version": "0.1.0",
+  "description": "Monstreets: a top-down open-city creature shooter for iOS (Capacitor) with co-op and PvP multiplayer.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test test/*.test.js",
+    "ios:add": "cap add ios",
+    "ios:sync": "cap sync ios",
+    "ios:open": "cap open ios"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
