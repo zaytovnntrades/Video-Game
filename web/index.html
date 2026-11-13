@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Monstreets">
+  <meta name="theme-color" content="#1d1a2b">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <title>Monstreets</title>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <canvas id="sticks"></canvas>
+  <div id="touch"></div>
+
+  <!-- In-game HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-tl panel">
+      <div class="row"><span id="h-name"></span><span id="h-lvl"></span></div>
+      <div class="bar hp"><i id="h-hp"></i><b id="h-hpt"></b></div>
+      <div class="bar xp"><i id="h-xp"></i></div>
+      <div class="row small"><span id="h-coins"></span><span id="h-pts"></span></div>
+    </div>
+    <div class="hud-tc panel" id="h-quest"><b id="h-qt"></b><span id="h-qx"></span></div>
+    <button class="hud-btn pause" id="b-pause" aria-label="Pause">II</button>
+    <div class="hud-br">
+      <button class="hud-btn wpn" id="b-wpn"><span id="h-wpn">Pistol</span><small id="h-ammo">&infin;</small></button>
+      <button class="hud-btn act" id="b-act">A<small id="h-hint"></small></button>
+    </div>
+    <div id="toasts"></div>
+    <div id="banner" class="hidden"><b id="ban-t"></b><span id="ban-s"></span></div>
+    <div id="dialog" class="hidden"><b id="dlg-t"></b><p id="dlg-x"></p><small>Tap to close</small></div>
+    <div id="dead" class="hidden"></div>
+    <div id="help" class="small">Left thumb: move &nbsp; Right thumb: aim + shoot</div>
+  </div>
+
+  <!-- Menus -->
+  <div id="screens">
+    <section id="s-title" class="screen">
+      <div class="logo">MONSTREETS</div>
+      <div class="tag">Raise your creature. Rule the streets.</div>
+      <canvas id="title-pets" width="96" height="32"></canvas>
+      <button class="big" id="t-start">Press Start</button>
+      <div class="foot small">Tip: on iPhone, tap Share &rarr; Add to Home Screen for full screen.</div>
+    </section>
+
+    <section id="s-creator" class="screen hidden">
+      <h2>Create your trainer</h2>
+      <div class="creator">
+        <div class="preview">
+          <canvas id="c-prev" width="120" height="150"></canvas>
+          <canvas id="c-pet" width="88" height="88"></canvas>
+          <input id="c-name" maxlength="12" placeholder="Name" autocomplete="off" autocapitalize="words" spellcheck="false">
+        </div>
+        <div class="options" id="c-opts"></div>
+      </div>
+      <div class="pets" id="c-pets"></div>
+      <div class="buttons"><button id="c-back" class="ghost">Back</button><button id="c-done" class="big">Let's go!</button></div>
+    </section>
+
+    <section id="s-menu" class="screen hidden">
+      <div class="logo small">MONSTREETS</div>
+      <div class="profile panel" id="m-prof"></div>
+      <div class="grid">
+        <button class="tile" id="m-story"><b>Story</b><span>Open city, quests, cars</span></button>
+        <button class="tile" id="m-multi"><b>Multiplayer</b><span>Co-op quests &amp; PvP</span></button>
+        <button class="tile" id="m-char"><b>Customize</b><span>Look &amp; companion</span></button>
+        <button class="tile" id="m-shop"><b>Shop</b><span>Unlock weapons</span></button>
+        <button class="tile" id="m-train"><b>Training</b><span>Spend stat points</span></button>
+        <button class="tile" id="m-set"><b>Settings</b><span>Sound, server</span></button>
+      </div>
+    </section>
+
+    <section id="s-shop" class="screen hidden">
+      <h2>Weapon Shop</h2>
+      <div class="coins" id="sh-coins"></div>
+      <div class="list" id="sh-list"></div>
+      <div class="buttons"><button class="ghost back">Back</button></div>
+    </section>
+
+    <section id="s-train" class="screen hidden">
+      <h2>Training</h2>
+      <div class="coins" id="tr-pts"></div>
+      <div class="list" id="tr-list"></div>
+      <div class="buttons"><button class="ghost back">Back</button></div>
+    </section>
+
+    <section id="s-multi" class="screen hidden">
+      <h2>Multiplayer</h2>
+      <div class="seg" id="mp-mode">
+        <button data-mode="coop" class="on"><b>Co-op Quest</b><span>Team up vs. waves. Reach wave 10.</span></button>
+        <button data-mode="pvp"><b>PvP Arena</b><span>First to 10 KOs. Stats equalized.</span></button>
+      </div>
+      <label>Room code (optional, 4 letters &mdash; share it with friends)
+        <input id="mp-room" maxlength="4" placeholder="Quick match" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      </label>
+      <label>Server
+        <input id="mp-server" placeholder="ws://192.168.1.20:8080/ws" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </label>
+      <div class="status" id="mp-status"></div>
+      <div class="buttons"><button class="ghost back">Back</button><button class="big" id="mp-go">Join</button></div>
+    </section>
+
+    <section id="s-set" class="screen hidden">
+      <h2>Settings</h2>
+      <div class="list">
+        <button class="item" id="st-sound"></button>
+        <button class="item danger" id="st-reset">Delete save &amp; start over</button>
+      </div>
+      <div class="small foot">Progress is saved on this device.</div>
+      <div class="buttons"><button class="ghost back">Back</button></div>
+    </section>
+
+    <section id="s-pause" class="screen dim hidden">
+      <h2>Paused</h2>
+      <div class="list narrow">
+        <button class="item" id="p-resume">Resume</button>
+        <button class="item" id="p-quit">Save &amp; quit to menu</button>
+      </div>
+    </section>
+  </div>
+  <div id="rotate" class="small">Rotate your phone sideways for the best view</div>
+
+  <script type="module" src="js/client/main.js"></script>
+</body>
+</html>
