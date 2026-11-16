@@ -294,9 +294,10 @@ function hash(x, y, s = 0) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-const ROOFS = ['#d95550', '#d95550', '#4f86c6', '#e3a33b', '#5aa86a', '#9a6bc4'];
+export const ROOFS = ['#d95550', '#d95550', '#4f86c6', '#e3a33b', '#5aa86a', '#9a6bc4'];
 
-export function renderGround(map) {
+// flat = true leaves out buildings, trees and walls (the 3D renderer builds them as meshes).
+export function renderGround(map, flat = false) {
   const W = map.w * TILE, H = map.h * TILE;
   const c = canvas(W, H);
   const g = c.getContext('2d');
@@ -355,6 +356,11 @@ export function renderGround(map) {
     for (let x = 0; x < map.w; x++) {
       const t = at(x, y), v = map.variant[y * map.w + x];
       const px = x * TILE, py = y * TILE;
+      if (flat && (t === T.TREE || t === T.WALL)) continue;
+      if (flat && t === T.BUILD) { // concrete footprint (visible when a building fades out)
+        R(px, py, TILE, TILE, '#a8a198'); R(px, py, TILE, 1, '#9a9389'); R(px, py, 1, TILE, '#9a9389');
+        continue;
+      }
       if (t === T.FLOWER) {
         const cols = ['#ff6b8b', '#ffd23f', '#ffffff', '#b98cff'];
         for (let i = 0; i < 3; i++) {

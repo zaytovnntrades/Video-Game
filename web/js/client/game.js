@@ -125,7 +125,7 @@ export class LocalGame extends Session {
     const ammo = WEAPON_ORDER.map((w) => (!me.weapons.includes(w) ? -2 : me.ammo[w] === Infinity ? -1 : me.ammo[w]));
     this.curWpn = me.wpn;
     this.resolveWeapon(me.weapons, ammo);
-    const inp = this.input.read(this.r.toScreen(me.x, me.y));
+    const inp = this.input.read(this.r, me);
     Object.assign(me.input, inp, { act: this.input.act, wpn: this.wantWpn });
     this.acc = Math.min(this.acc + dt, 0.25);
     while (this.acc >= STEP) {
@@ -290,7 +290,7 @@ export class NetGame extends Session {
     const owned = this.priv ? WEAPON_ORDER.filter((w, i) => this.priv.ammo[i] !== -2) : ['pistol'];
     this.curWpn = this.priv ? this.priv.wpn : 'pistol';
     this.resolveWeapon(owned, this.priv ? this.priv.ammo : [-1]);
-    const inp = this.input.read(me ? this.r.toScreen(me.x, me.y) : null);
+    const inp = this.input.read(this.r, me);
     this.myAng = inp.ang;
     const now = performance.now();
     if (now - this.lastSend > 50) {

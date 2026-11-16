@@ -26,6 +26,8 @@ export class Renderer {
     this.texts = [];
     this.shake = 0;
     this.time = 0;
+    this.kind = 'classic';
+    this.aimYScale = 1;
     this.resize();
   }
 
@@ -59,6 +61,11 @@ export class Renderer {
   }
 
   snapCamera(x, y) { this.cam.x = x; this.cam.y = y; }
+
+  // World point under a screen (CSS pixel) position.
+  screenToWorld(sx, sy) {
+    return { x: (sx * this.dpr - this.cv.width / 2) / this.scale + this.cam.x, y: (sy * this.dpr - this.cv.height / 2) / this.scale + this.cam.y };
+  }
 
   // Screen (CSS pixel) position of a world point.
   toScreen(x, y) {

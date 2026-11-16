@@ -22,7 +22,17 @@ html, body {
   overscroll-behavior: none; -webkit-text-size-adjust: 100%;
 }
 input { -webkit-user-select: text; user-select: text; touch-action: manipulation; }
-canvas#game, canvas#sticks, #touch { position: fixed; inset: 0; width: 100%; height: 100%; }
+canvas#game, canvas#game3d, canvas#sticks, #touch, #tilt, #vignette { position: fixed; inset: 0; width: 100%; height: 100%; }
+#tilt, #vignette { pointer-events: none; display: none; }
+/* 3D mode: depth-of-field blur at the top and bottom (tilt-shift), soft vignette */
+body.gfx-high #tilt {
+  display: block;
+  -webkit-backdrop-filter: blur(1.4px); backdrop-filter: blur(1.4px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 24%, transparent 80%, #000 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 24%, transparent 80%, #000 100%);
+}
+body.gfx-3d #vignette { display: block; background: radial-gradient(ellipse at 50% 55%, transparent 55%, rgba(20, 12, 40, 0.38) 100%); }
+body:not(.gfx-3d) canvas#game3d { display: none; }
 canvas#game { image-rendering: pixelated; }
 canvas#sticks { pointer-events: none; z-index: 2; }
 #touch { z-index: 1; touch-action: none; }
@@ -131,6 +141,7 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 8px; width: 
 #rotate { display: none; position: fixed; bottom: calc(8px + var(--sab)); left: 0; right: 0; text-align: center; z-index: 5; pointer-events: none; opacity: .8; }
 @media (orientation: portrait) and (max-width: 600px) {
   #rotate { display: block; }
+  #help { display: none; }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .creator { flex-direction: column; align-items: center; }
   .hud-tc { top: calc(122px + var(--sat)); left: calc(8px + var(--sal)); transform: none; max-width: calc(100vw - 140px); }

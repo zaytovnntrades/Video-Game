@@ -2,6 +2,7 @@
 import { LOOK, LOOK_KEYS, CREATURES, CREATURE_ORDER, WEAPONS, WEAPON_ORDER, STAT_MAX, EVOLVE_LEVEL, xpNeed, MAX_LEVEL } from '../shared/data.js';
 import { makeCity } from '../shared/maps.js';
 import { Renderer } from './render.js';
+import { Renderer3D } from './render3d.js';
 import { Input } from './input.js';
 import { charSprite, petSprite } from './art.js';
 import { loadProfile, saveProfile, resetProfile, defaultProfile, canBuy, buy, spendPoint } from './save.js';
@@ -94,13 +95,38 @@ setSound(app.profile.settings.sound);
 
 const cv = $('game');
 const sticks = $('sticks');
-app.renderer = new Renderer(cv);
+const GFX = { high: '3D High (shadows, depth blur)', fast: '3D Fast', classic: 'Classic 2D' };
+const renderers = {};
+// Picks the renderer for a graphics setting. 3D needs WebGL2; without it we fall back to 2D.
+function useGfx(mode) {
+  if (!GFX[mode]) mode = 'high';
+  let r = null;
+  if (mode !== 'classic') {
+    try {
+      // one WebGL renderer for the whole app; High/Fast just change its quality
+      if (!renderers.gl) renderers.gl = new Renderer3D($('game3d'), cv, { quality: mode });
+      r = renderers.gl;
+      r.setQuality(mode);
+    } catch (e) {
+      console.warn('3D graphics unavailable, using Classic 2D', e);
+      mode = 'classic';
+    }
+  }
+  if (!r) r = renderers.classic || (renderers.classic = new Renderer(cv));
+  document.body.classList.toggle('gfx-3d', mode !== 'classic');
+  document.body.classList.toggle('gfx-high', mode === 'high');
+  app.renderer = r;
+  app.gfx = mode;
+  r.resize();
+  r.setMap(backdrop);
+  return mode;
+}
 app.input = new Input($('touch'));
 app.input.onPause = () => togglePause();
 
 // Menu backdrop: the city, slowly panning.
 const backdrop = makeCity(20260);
-app.renderer.setMap(backdrop);
+useGfx(app.profile.settings.gfx);
 let pan = 0;
 
 function resize() {
@@ -260,7 +286,17 @@ function renderTrain() {
 // Settings
 function renderSettings() {
   $('st-sound').innerHTML = `<span>Sound</span><span>${app.profile.settings.sound ? 'ON' : 'OFF'}</span>`;
+  const fell = app.profile.settings.gfx !== 'classic' && app.gfx === 'classic';
+  $('st-gfx').innerHTML = `<span>Graphics<span class="d">${fell ? '3D is not supported on this device' : 'Lower it if the game feels slow'}</span></span><span>${GFX[app.gfx]}</span>`;
 }
+tap($('st-gfx'), () => {
+  const order = ['high', 'fast', 'classic'];
+  const next = order[(order.indexOf(app.gfx) + 1) % order.length];
+  app.profile.settings.gfx = next;
+  useGfx(next);
+  app.save(true);
+  renderSettings();
+});
 tap($('st-sound'), () => { app.profile.settings.sound = !app.profile.settings.sound; setSound(app.profile.settings.sound); app.save(true); renderSettings(); });
 tap($('st-reset'), () => {
   if (!window.confirm('Delete your hero and all progress?')) return;

@@ -73,21 +73,28 @@ export class Input {
     return d < 1 ? { x: 0, y: 0, m: 0 } : { x: (dx / d) * m, y: (dy / d) * m, m };
   }
 
-  // playerScreen: where the local player is drawn (CSS px), for mouse aiming.
-  read(playerScreen) {
+  // r: the active renderer (maps screen points to the ground); me: local player or null.
+  // Sticks are in screen space; on a tilted 3D camera the screen's vertical axis is
+  // foreshortened, so r.aimYScale stretches it back to match what the player sees.
+  read(r, me) {
     const K = this.keys;
     let mx = 0, my = 0;
     if (K.has('a') || K.has('arrowleft')) mx -= 1;
     if (K.has('d') || K.has('arrowright')) mx += 1;
     if (K.has('w') || K.has('arrowup')) my -= 1;
     if (K.has('s') || K.has('arrowdown')) my += 1;
+    const k = (r && r.aimYScale) || 1;
     const mv = this.stickVec(this.move);
-    if (mv.m > 0.12) { mx = mv.x; my = mv.y; }
+    if (mv.m > 0.12) {
+      const ux = mv.x, uy = mv.y * k, ul = Math.hypot(ux, uy) || 1;
+      mx = (ux / ul) * mv.m; my = (uy / ul) * mv.m;
+    }
     const av = this.stickVec(this.aim);
     let fire = false;
-    if (av.m > 0.25) { this.ang = Math.atan2(av.y, av.x); fire = true; }
-    else if (this.mouse.used && playerScreen) {
-      this.ang = Math.atan2(this.mouse.y - playerScreen.y, this.mouse.x - playerScreen.x);
+    if (av.m > 0.25) { this.ang = Math.atan2(av.y * k, av.x); fire = true; }
+    else if (this.mouse.used && r && me) {
+      const w = r.screenToWorld(this.mouse.x, this.mouse.y);
+      if (w) this.ang = Math.atan2(w.y - me.y, w.x - me.x);
       fire = this.mouse.down || K.has(' ');
     } else if (Math.hypot(mx, my) > 0.2) {
       this.ang = Math.atan2(my, mx);
