@@ -442,14 +442,19 @@ export class Renderer3D {
     this.resize();
   }
 
-  resize() {
+  // rect: where the game view sits on the page (CSS px); see the 2D renderer.
+  resize(rect) {
+    rect = rect || this.rect || { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+    this.rect = rect;
+    this.ox = rect.x; this.oy = rect.y;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const w = window.innerWidth, h = window.innerHeight;
+    const w = rect.w, h = rect.h;
     this.dpr = dpr;
     this.cv.width = Math.round(w * dpr); this.cv.height = Math.round(h * dpr);
-    this.cv.style.width = w + 'px'; this.cv.style.height = h + 'px';
+    Object.assign(this.cv.style, { left: rect.x + 'px', top: rect.y + 'px', width: w + 'px', height: h + 'px' });
     this.gl.setPixelRatio(Math.min(dpr, this.quality === 'high' ? 2 : 1.5));
     this.gl.setSize(w, h, true);
+    Object.assign(this.glCv.style, { left: rect.x + 'px', top: rect.y + 'px' });
     this.camera.aspect = w / h;
     // Frame about 9 tiles of ground vertically in landscape; in portrait keep ~7.5 tiles across.
     const tiles = h > w ? (7.5 * h) / w : 9;

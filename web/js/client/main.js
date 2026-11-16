@@ -18,6 +18,13 @@ const tap = (node, fn) => node.addEventListener('click', (e) => { sfx.ui(); fn(e
 class Hud {
   constructor() {
     this.cache = {};
+    // weapon slots on the lower (touch) screen
+    this.slots = WEAPON_ORDER.map((w, i) => {
+      const b = el('button', '', `${WEAPONS[w].name}<small></small>`);
+      b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); if (!b.disabled) { app.input.wpnReq = i; } });
+      $('p-slots').appendChild(b);
+      return b;
+    });
     this.bannerT = 0;
     this.dialogT = 0;
     tap($('dialog'), () => this.closeDialog());
@@ -50,6 +57,30 @@ class Hud {
   clear() {
     $('toasts').innerHTML = ''; $('banner').classList.add('hidden'); this.closeDialog(); this.cache = {};
   }
+  updatePanel(profile, st, hpf) {
+    this.set('p-name', profile.name);
+    this.set('p-lvl', `Lv ${profile.level}`);
+    this.set('p-coins', `${profile.coins} coins${profile.points ? ` +${profile.points}pts` : ''}`);
+    this.set('p-xp', profile.level >= MAX_LEVEL ? '100%' : `${Math.round((profile.xp / xpNeed(profile.level)) * 100)}%`, 'width');
+    this.set('p-hp', `${Math.round(hpf * 100)}%`, 'width');
+    this.set('p-hpt', `${Math.ceil(st.hp)}/${st.maxHp}`);
+    $('p-hp').parentElement.classList.toggle('low', hpf < 0.3);
+    this.set('p-qt', st.quest.title);
+    this.set('p-qx', st.quest.text);
+    this.set('p-hint', st.hint);
+    $('pb-act').classList.toggle('hidden', !!st.noAction);
+    WEAPON_ORDER.forEach((w, i) => {
+      const a = st.slots ? st.slots[i] : -2;
+      const key = `${a}|${st.wpn === w}`;
+      if (this.cache['slot' + i] === key) return;
+      this.cache['slot' + i] = key;
+      const b = this.slots[i];
+      b.disabled = a === -2 || a === 0;
+      b.classList.toggle('on', st.wpn === w);
+      b.querySelector('small').textContent = a === -2 ? '--' : a === -1 ? '\u221e' : String(a);
+    });
+  }
+
   update(dt, profile, st) {
     if (this.bannerT > 0 && (this.bannerT -= dt) <= 0) $('banner').classList.add('hidden');
     if (this.dialogT > 0 && (this.dialogT -= dt) <= 0) this.closeDialog();
@@ -70,6 +101,7 @@ class Hud {
     this.set('h-ammo', st.ammo === Infinity ? '∞' : String(st.ammo));
     this.set('h-hint', st.hint);
     $('b-act').classList.toggle('hidden', !!st.noAction);
+    if (document.body.classList.contains('dual')) this.updatePanel(profile, st, hpf);
     const deadText = st.dead ? (st.respawn < 0 ? 'KO! You revive when the wave is cleared.' : `KO! Back in ${st.respawn}...`) : '';
     this.set('dead', deadText);
     $('dead').classList.toggle('hidden', !st.dead);
@@ -117,7 +149,7 @@ function useGfx(mode) {
   document.body.classList.toggle('gfx-high', mode === 'high');
   app.renderer = r;
   app.gfx = mode;
-  r.resize();
+  r.resize(app.viewRect);
   r.setMap(backdrop);
   return mode;
 }
@@ -129,8 +161,55 @@ const backdrop = makeCity(20260);
 useGfx(app.profile.settings.gfx);
 let pan = 0;
 
+// ---------------- layout ----------------
+// Dual screen: the game gets the top screen (or the left one when held sideways)
+// and the touch panel takes the rest. Menus always use the full screen.
+const LAYOUTS = { auto: 'Auto (two screens when upright)', dual: 'Two screens', full: 'Full screen' };
+function applyLayout() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const pref = LAYOUTS[app.profile.settings.layout] ? app.profile.settings.layout : 'auto';
+  const portrait = H > W;
+  const dual = !!app.session && (pref === 'dual' || (pref === 'auto' && portrait));
+  const b = document.body;
+  b.classList.toggle('dual', dual);
+  b.classList.toggle('dual-v', dual && portrait);
+  b.classList.toggle('dual-h', dual && !portrait);
+  let rect = { x: 0, y: 0, w: W, h: H };
+  if (dual && portrait) rect = { x: 0, y: 0, w: W, h: Math.round(Math.min(H * 0.55, W * 1.2)) };
+  else if (dual) rect = { x: 0, y: 0, w: Math.round(W * 0.63), h: H };
+  b.style.setProperty('--gw', rect.w + 'px');
+  b.style.setProperty('--gh', rect.h + 'px');
+  app.dual = dual;
+  app.viewRect = rect;
+  return rect;
+}
+
+// Radar on the lower screen: whole map, enemies, allies, objective.
+function drawRadar(scene) {
+  const c = $('p-radar'), r = app.renderer;
+  if (!r.mini || !r.map) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const css = c.clientWidth || 150;
+  if (c.width !== Math.round(css * dpr)) { c.width = Math.round(css * dpr); c.height = Math.round(css * dpr); }
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.imageSmoothingEnabled = false;
+  g.fillStyle = '#0f0d18'; g.fillRect(0, 0, css, css);
+  const map = r.map, k = css / Math.max(map.w, map.h);
+  const ox = (css - map.w * k) / 2, oy = (css - map.h * k) / 2;
+  g.globalAlpha = 0.85; g.drawImage(r.mini, ox, oy, map.w * k, map.h * k); g.globalAlpha = 1;
+  const dot = (x, y, col, s) => { g.fillStyle = col; g.fillRect(ox + (x / 32) * k - s / 2, oy + (y / 32) * k - s / 2, s, s); };
+  const t = performance.now() / 1000;
+  for (const e of scene.enemies) dot(e.x, e.y, e.boss ? '#ffd23f' : '#ff4f6d', e.boss ? 6 : 3);
+  for (const n of scene.npcs) dot(n.x, n.y, '#ffe066', 5);
+  for (const p of scene.pickups) if (p.kind === 'crate') dot(p.x, p.y, '#c99558', 5);
+  for (const p of scene.players) if (p !== scene.me && !p.dead) dot(p.x, p.y, '#ffffff', 5);
+  if (scene.questTarget) dot(scene.questTarget.x, scene.questTarget.y, Math.floor(t * 4) % 2 ? '#ffd23f' : '#ffffff', 6);
+  if (scene.me) dot(scene.me.x, scene.me.y, '#5bd8ff', 6);
+}
+
 function resize() {
-  app.renderer.resize();
+  app.renderer.resize(applyLayout());
   const dpr = app.renderer.dpr;
   sticks.width = Math.round(window.innerWidth * dpr); sticks.height = Math.round(window.innerHeight * dpr);
 }
@@ -287,8 +366,17 @@ function renderTrain() {
 function renderSettings() {
   $('st-sound').innerHTML = `<span>Sound</span><span>${app.profile.settings.sound ? 'ON' : 'OFF'}</span>`;
   const fell = app.profile.settings.gfx !== 'classic' && app.gfx === 'classic';
+  const lay = LAYOUTS[app.profile.settings.layout] ? app.profile.settings.layout : 'auto';
+  $('st-layout').innerHTML = `<span>Layout<span class="d">Two screens: game on top, touch panel below</span></span><span>${LAYOUTS[lay]}</span>`;
   $('st-gfx').innerHTML = `<span>Graphics<span class="d">${fell ? '3D is not supported on this device' : 'Lower it if the game feels slow'}</span></span><span>${GFX[app.gfx]}</span>`;
 }
+tap($('st-layout'), () => {
+  const order = ['auto', 'dual', 'full'];
+  const cur = LAYOUTS[app.profile.settings.layout] ? app.profile.settings.layout : 'auto';
+  app.profile.settings.layout = order[(order.indexOf(cur) + 1) % order.length];
+  app.save(true);
+  renderSettings();
+});
 tap($('st-gfx'), () => {
   const order = ['high', 'fast', 'classic'];
   const next = order[(order.indexOf(app.gfx) + 1) % order.length];
@@ -368,6 +456,8 @@ window.addEventListener('pagehide', () => app.save(true));
 const hold = (id, fn) => $(id).addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fn(); });
 hold('b-act', () => { app.input.act++; });
 hold('b-wpn', () => { app.input.wpnReq = 'next'; });
+hold('pb-act', () => { app.input.act++; });
+$('pb-pause').addEventListener('click', () => { sfx.ui(); togglePause(); });
 
 // ---------------- sessions ----------------
 function begin(session) {
@@ -381,6 +471,7 @@ function begin(session) {
   app.input.enabled = true;
   helpT = 8;
   $('help').classList.remove('hidden');
+  resize(); // switch to the dual-screen layout if it applies
 }
 function startLocal() {
   const g = new LocalGame(app);
@@ -396,6 +487,7 @@ function endSession() {
   $('hud').classList.add('hidden');
   app.hud.clear();
   app.save(true);
+  resize(); // menus use the full screen
   app.renderer.setMap(backdrop);
 }
 
@@ -409,7 +501,10 @@ function frame(now) {
   const r = app.renderer;
   if (s) {
     s.update(dt);
-    r.draw(s.scene(), dt);
+    const sc = s.scene();
+    if (app.dual) sc.showMini = false; // the radar lives on the lower screen
+    r.draw(sc, dt);
+    if (app.dual) drawRadar(sc);
     app.hud.update(dt, app.profile, s.hudState());
     app.save(false);
     if (helpT > 0 && (helpT -= dt) <= 0) $('help').classList.add('hidden');

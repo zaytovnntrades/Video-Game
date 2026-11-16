@@ -168,6 +168,8 @@ export class LocalGame extends Session {
     return {
       hp: me.hp, maxHp: me.maxHp, wpn: me.wpn, ammo: me.ammo[me.wpn], quest, hint: this.hint(),
       dead: me.dead, respawn: me.dead ? Math.ceil(me.respawn) : 0,
+      // ammo per weapon slot for the touch panel: -1 unlimited, -2 not owned
+      slots: WEAPON_ORDER.map((w) => (!me.weapons.includes(w) ? -2 : me.ammo[w] === Infinity ? -1 : me.ammo[w])),
     };
   }
 
@@ -325,6 +327,7 @@ export class NetGame extends Session {
     return {
       hp: me.hp, maxHp: me.maxHp, wpn: pr ? pr.wpn : 'pistol', ammo: pr ? (pr.ammo[wi] === -1 ? Infinity : pr.ammo[wi]) : Infinity, quest, hint: '',
       dead: me.dead, respawn: this.mode === 'coop' ? -1 : pr ? pr.respawn : 0, noAction: true,
+      slots: pr ? pr.ammo : [-1, -2, -2, -2, -2],
     };
   }
 

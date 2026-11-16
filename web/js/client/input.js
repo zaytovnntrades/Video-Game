@@ -93,7 +93,7 @@ export class Input {
     let fire = false;
     if (av.m > 0.25) { this.ang = Math.atan2(av.y * k, av.x); fire = true; }
     else if (this.mouse.used && r && me) {
-      const w = r.screenToWorld(this.mouse.x, this.mouse.y);
+      const w = r.screenToWorld(this.mouse.x - (r.ox || 0), this.mouse.y - (r.oy || 0));
       if (w) this.ang = Math.atan2(w.y - me.y, w.x - me.x);
       fire = this.mouse.down || K.has(' ');
     } else if (Math.hypot(mx, my) > 0.2) {

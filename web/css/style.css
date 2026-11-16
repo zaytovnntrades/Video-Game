@@ -159,3 +159,50 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 8px; width: 
   .screen { gap: 8px; }
   .tile { min-height: 56px; padding: 8px; }
 }
+
+/* ---------- dual-screen layout: game on the top screen, touch panel below ---------- */
+#panel { display: none; }
+body.dual .hud-tl, body.dual .hud-tc, body.dual .hud-br, body.dual .pause, body.dual #help, body.dual #rotate { display: none !important; }
+body.dual #panel {
+  display: flex; flex-direction: column; position: absolute; gap: 6px;
+  background: linear-gradient(180deg, #2b2640, #1d1a2b); border-top: 3px solid #0f0d18;
+  padding: 0 calc(10px + var(--sar)) calc(8px + var(--sab)) calc(10px + var(--sal));
+  background-image: radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(180deg, #2b2640, #1d1a2b);
+  background-size: 8px 8px, auto;
+}
+body.dual-v #panel { left: 0; right: 0; top: var(--gh); bottom: 0; }
+body.dual-h #panel { top: 0; bottom: 0; left: var(--gw); right: 0; border-top: 0; border-left: 3px solid #0f0d18; padding-top: calc(6px + var(--sat)); }
+.hinge { height: 12px; margin: 0 -10px; background: linear-gradient(180deg, #0f0d18, #3a3452 60%, #2b2640); display: flex; justify-content: space-between; padding: 3px 18%; }
+.hinge i { width: 46px; height: 4px; border-radius: 2px; background: #4a4462; }
+body.dual-h .hinge { display: none; }
+.p-stats { display: flex; flex-direction: column; gap: 2px; }
+.p-row { display: flex; gap: 10px; align-items: baseline; }
+.p-row b { color: var(--gold); font-weight: normal; }
+.p-row #p-coins { margin-left: auto; font-size: 9px; }
+.p-quest { font-size: 8px; display: flex; gap: 8px; flex-wrap: wrap; min-height: 12px; }
+.p-quest b { color: var(--gold); font-weight: normal; }
+.p-mid { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 0; }
+.zone { flex: 1; align-self: stretch; border: 2px dashed rgba(255,255,255,.18); border-radius: 50%; display: flex; align-items: center; justify-content: center; max-height: 150px; margin: auto 0; aspect-ratio: 1; max-width: 120px; }
+.zone span { font-size: 8px; opacity: .45; }
+#p-radar { width: 150px; height: 150px; image-rendering: pixelated; border: 3px solid #0f0d18; border-radius: 6px; background: #0f0d18; flex: none; }
+.p-bottom { display: flex; gap: 8px; align-items: center; }
+.slots { flex: 1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.slots button { pointer-events: auto; font-size: 6px; padding: 6px 2px; border: 2px solid var(--ink); border-radius: 6px; background: var(--line); box-shadow: 0 3px 0 rgba(0,0,0,.45); display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 40px; justify-content: center; }
+.slots button small { font-size: 7px; color: #6b4b00; }
+.slots button.on { background: var(--gold); outline: 2px solid #fff; }
+.slots button[disabled] { opacity: .35; }
+.pbtn { pointer-events: auto; border: 3px solid var(--ink); background: var(--line); box-shadow: 0 3px 0 rgba(0,0,0,.45); border-radius: 8px; width: 38px; height: 38px; font-size: 10px; flex: none; }
+.pbtn.act { width: 58px; height: 58px; border-radius: 50%; background: var(--gold); font-size: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.pbtn.act small { font-size: 5px; }
+.pbtn:active, .slots button:active { transform: translateY(2px); }
+body.dual-h .p-mid { flex-direction: column; }
+body.dual-h .zone { display: none; }
+body.dual-h #p-radar { width: min(150px, 40vh); height: min(150px, 40vh); }
+body.dual-h .slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* keep pop-ups inside the top (game) screen */
+body.dual #banner { left: calc(var(--gw) / 2); top: calc(var(--gh) * 0.2); }
+body.dual #banner b { font-size: 18px; }
+body.dual #toasts { left: calc(var(--gw) / 2); top: calc(var(--gh) * 0.1 + var(--sat)); }
+body.dual #dialog { left: calc(var(--gw) / 2); width: min(560px, calc(var(--gw) - 20px)); }
+body.dual-v #dialog { bottom: calc(100% - var(--gh) + 10px); }
+body.dual #dead { inset: auto; left: 0; top: 0; width: var(--gw); height: var(--gh); }

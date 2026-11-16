@@ -44,6 +44,27 @@
     <div id="dialog" class="hidden"><b id="dlg-t"></b><p id="dlg-x"></p><small>Tap to close</small></div>
     <div id="dead" class="hidden"></div>
     <div id="help" class="small">Left thumb: move &nbsp; Right thumb: aim + shoot</div>
+
+    <!-- Lower screen of the dual-screen layout (touch panel) -->
+    <div id="panel">
+      <div class="hinge"><i></i><i></i></div>
+      <div class="p-stats">
+        <div class="p-row"><b id="p-name"></b><span id="p-lvl"></span><span id="p-coins"></span></div>
+        <div class="bar hp"><i id="p-hp"></i><b id="p-hpt"></b></div>
+        <div class="bar xp"><i id="p-xp"></i></div>
+        <div class="p-quest"><b id="p-qt"></b><span id="p-qx"></span></div>
+      </div>
+      <div class="p-mid">
+        <div class="zone"><span>MOVE</span></div>
+        <canvas id="p-radar" width="150" height="150"></canvas>
+        <div class="zone"><span>AIM</span></div>
+      </div>
+      <div class="p-bottom">
+        <div class="slots" id="p-slots"></div>
+        <button class="pbtn" id="pb-pause" aria-label="Pause">II</button>
+        <button class="pbtn act" id="pb-act">A<small id="p-hint"></small></button>
+      </div>
+    </div>
   </div>
 
   <!-- Menus -->
@@ -118,6 +139,7 @@
       <div class="list">
         <button class="item" id="st-sound"></button>
         <button class="item" id="st-gfx"></button>
+        <button class="item" id="st-layout"></button>
         <button class="item danger" id="st-reset">Delete save &amp; start over</button>
       </div>
       <div class="small foot">Progress is saved on this device.</div>

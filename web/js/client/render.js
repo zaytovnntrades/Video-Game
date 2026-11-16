@@ -31,13 +31,16 @@ export class Renderer {
     this.resize();
   }
 
-  resize() {
+  // rect: where the game view sits on the page (CSS px). Full window unless the
+  // dual-screen layout gives the game only the top (or left) screen.
+  resize(rect) {
+    rect = rect || { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+    this.ox = rect.x; this.oy = rect.y;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const w = window.innerWidth, h = window.innerHeight;
+    const w = rect.w, h = rect.h;
     this.cv.width = Math.round(w * dpr);
     this.cv.height = Math.round(h * dpr);
-    this.cv.style.width = w + 'px';
-    this.cv.style.height = h + 'px';
+    Object.assign(this.cv.style, { left: rect.x + 'px', top: rect.y + 'px', width: w + 'px', height: h + 'px' });
     this.dpr = dpr;
     // Show about 8.5 tiles vertically (more on tall/portrait screens).
     const tiles = h > w ? 12 : 8.5;
