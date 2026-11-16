@@ -15,6 +15,7 @@ The characters, creatures, art and name are all original. Nothing is copied from
 | **Weapons** | Pistol, Uzi, Shotgun, Rifle (pierces) and Rocket (splash). Buy them in the Shop; each needs a minimum level. Ammo drops come from enemies. |
 | **Co-op quest (multiplayer)** | Up to 4 players fight escalating waves in an arena, with a boss every 5 waves. The squad quest is to clear wave 10 for a big bonus. XP is shared. |
 | **PvP arena (multiplayer)** | Up to 6 players, first to 10 knockouts. Every player gets all weapons and the same stats, so it stays fair. |
+| **Graphics** | Default 3D handheld-console look built with three.js (WebGL2), shown on a tilted camera. Buildings are extruded with windows, doors and roofs, and the trees and cars are low-poly 3D. Sunlight casts real shadows, and depth-of-field blur softens the screen edges. The pixel characters stand in the world as sprites. A building turns see-through when you walk behind it. Settings → Graphics cycles **3D High** (shadows and blur), **3D Fast** and **Classic 2D**. Classic is used automatically on devices without WebGL2. |
 | **Controls** | Left thumb moves, right thumb aims and fires automatically, **A** enters cars or talks, and the weapon button cycles weapons. On desktop: WASD to move, mouse to aim and click to fire, E for action, Q or 1-5 for weapons, Esc to pause. |
 
 ## Run it (any computer)
@@ -43,6 +44,7 @@ Inside the iOS app, open Multiplayer and enter your server address, for example 
 
 ```
 web/                  the game (plain HTML/JS, no build step)
+  vendor/             three.js r170 (MIT), bundled so the app works offline
   js/shared/          rules shared by client and server: data, maps, simulation
   js/client/          rendering, pixel art, input, audio, menus, networking
 server/index.js       static file server + WebSocket multiplayer (authoritative)
