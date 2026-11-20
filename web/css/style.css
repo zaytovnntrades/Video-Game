@@ -150,11 +150,14 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 8px; width: 
 #s-creator .buttons { position: sticky; bottom: 0; padding: 8px 0; width: 100%; background: linear-gradient(transparent, rgba(29,26,43,.95) 35%); }
 @media (max-height: 430px) {
   #c-prev { width: 80px; height: 100px; }
-  #c-pet { width: 56px; height: 56px; }
+  #c-pet { display: none; } /* the highlighted creature card already shows the pick */
   .pets button { flex-direction: row; justify-content: center; padding: 6px; }
   .pets button canvas { width: 32px; height: 32px; }
   .pets button small { display: none; }
-  .opt button { height: 26px; min-width: 26px; }
+  .opt button { height: 26px; min-width: 24px; }
+  .options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; } /* skin|hair, style|hat, shirt|pants */
+  .opt { gap: 5px; flex-wrap: nowrap; }
+  .opt > span { width: 40px; flex: none; }
   .logo { margin-top: 2vh; }
   .screen { gap: 8px; }
   .tile { min-height: 56px; padding: 8px; }
