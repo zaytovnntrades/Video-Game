@@ -6,6 +6,7 @@
 import * as THREE from '../../vendor/three.module.min.js';
 import { LOOK } from '../shared/data.js';
 import { CAR_COLORS } from './art.js';
+import { buildHuman, poseHuman } from './human3d.js';
 
 // ---------- shared geometry / material caches ----------
 const geoCache = new Map();
@@ -43,117 +44,9 @@ function mesh(g, m, x = 0, y = 0, z = 0) {
   return o;
 }
 
-// ---------- hero / NPC ----------
-// Materials are per character (not cached) so the hero can flash red when hurt.
-export function buildCharacter(look) {
-  const own = (c, rough = 0.7) => new THREE.MeshStandardMaterial({ color: c, roughness: rough });
-  const skin = own(LOOK.skin[look.skin] || LOOK.skin[0], 0.6);
-  const hair = own(LOOK.hair[look.hair] || LOOK.hair[0], 0.55);
-  const shirt = own(LOOK.shirt[look.shirt] || LOOK.shirt[0], 0.8);
-  const pants = own(LOOK.pants[look.pants] || LOOK.pants[0], 0.85);
-  const shoe = M('#2c2833', { rough: 0.5 });
-  const root = new THREE.Group();
-  const body = new THREE.Group();
-  root.add(body);
-  const legs = [], arms = [];
-  for (const z of [-2.9, 2.9]) {
-    const hip = new THREE.Group();
-    hip.position.set(0, 11, z);
-    hip.add(mesh(G.capsule(2.2, 5.5), pants, 0, -5, 0));
-    hip.add(mesh(G.box(5.2, 2.6, 3.8), shoe, 1, -10.2, 0));
-    body.add(hip);
-    legs.push(hip);
-  }
-  const torso = mesh(G.capsule(5, 4.5, 14), shirt, 0, 16.5, 0);
-  torso.scale.set(0.72, 0.78, 1);
-  body.add(torso);
-  for (const z of [-6.6, 6.6]) {
-    const sh = new THREE.Group();
-    sh.position.set(0, 20.2, z);
-    sh.add(mesh(G.capsule(1.8, 5.5), shirt, 0, -4, 0));
-    sh.add(mesh(G.sphere(2.1, 10, 8), skin, 0, -8.4, 0));
-    body.add(sh);
-    arms.push(sh);
-  }
-  const head = new THREE.Group();
-  head.position.set(0, 28.5, 0);
-  head.add(mesh(G.sphere(6.3, 22, 16), skin));
-  const eye = M('#1d1a2b', { rough: 0.3 }), shine = M('#ffffff', { rough: 0.2 });
-  for (const z of [-2.3, 2.3]) {
-    head.add(mesh(G.sphere(1.05, 10, 8), eye, 5.55, 0.4, z));
-    head.add(mesh(G.sphere(0.38, 6, 4), shine, 6.4, 0.9, z + 0.3));
-  }
-  head.add(mesh(G.sphere(0.8, 8, 6), M('#f39c9c', { rough: 0.6 }), 5.2, -2.2, 3.6));
-  head.add(mesh(G.sphere(0.8, 8, 6), M('#f39c9c', { rough: 0.6 }), 5.2, -2.2, -3.6));
-  // hair cap (tilted back so the face stays clear)
-  const cap = mesh(G.hemi(6.75), hair, -0.4, 0.2, 0);
-  cap.rotation.z = 0.32;
-  head.add(cap);
-  const back = mesh(G.sphere(6.4, 16, 12), hair, -1.2, -0.4, 0);
-  back.scale.set(0.9, 0.95, 1.02);
-  head.add(back);
-  const style = look.style | 0, hat = look.hat | 0;
-  if (style === 1 && hat === 0) {
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      const s = mesh(G.cone(1.8, 5), hair, -0.6 + Math.cos(a) * 3.2, 6.2, Math.sin(a) * 3.2);
-      s.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5);
-      head.add(s);
-    }
-  } else if (style === 2) {
-    head.add(mesh(G.box(3.6, 10, 11.5), hair, -4.6, -5, 0));
-  }
-  if (hat === 1) { // cap with a star badge
-    const hc = new THREE.MeshStandardMaterial({ color: '#2bb3a3', roughness: 0.6 });
-    const c = mesh(G.hemi(7), hc, 0, 1.4, 0);
-    head.add(c);
-    head.add(mesh(G.box(6.5, 0.9, 8.5), hc, 6, 1.8, 0));
-    head.add(mesh(G.sphere(1, 6, 4), M('#ffd23f', { emissive: 0.4 }), 5.6, 4.5, 0));
-  } else if (hat === 2) { // beanie with a pom-pom
-    const bc = new THREE.MeshStandardMaterial({ color: '#3f7fd8', roughness: 0.9 });
-    const b = mesh(G.hemi(7.1), bc, 0, 1.1, 0);
-    b.scale.y = 1.12;
-    head.add(b);
-    const band = mesh(G.torus(6.6, 1.1), M('#7fb0f0', { rough: 0.9 }), 0, 1.4, 0);
-    band.rotation.x = Math.PI / 2;
-    head.add(band);
-    head.add(mesh(G.sphere(1.7, 8, 6), M('#f5f5f5', { rough: 0.9 }), 0, 9.2, 0));
-  }
-  body.add(head);
-  // gun held in the right hand
-  const gun = new THREE.Group();
-  gun.position.set(0, -8.4, 0);
-  const gm = M('#2d323b', { rough: 0.35, metal: 0.7 });
-  gun.add(mesh(G.box(1, 1, 1), gm));
-  arms[1].add(gun);
-  root.userData = { body, legs, arms, head, gun, gunMesh: gun.children[0], mats: [skin, hair, shirt, pants], torso };
-  return root;
-}
-
-const GUN_SIZE = { pistol: [8, 2.4, 2], uzi: [10, 3, 2.2], shotgun: [15, 2.6, 2.4], rifle: [17, 2.4, 2.2], rocket: [17, 4.4, 4.4] };
-
-// Animates a character: walk cycle, aim pose, idle bob, hurt flash.
-export function poseCharacter(o, { phase, moving, wpn, hurt, t, armed = true }) {
-  const u = o.userData;
-  const swing = moving ? Math.sin(phase) * 0.75 : 0;
-  u.legs[0].rotation.z = swing;
-  u.legs[1].rotation.z = -swing;
-  u.arms[0].rotation.z = moving ? -swing * 0.8 : 0.05 * Math.sin(t * 2);
-  u.body.position.y = moving ? Math.abs(Math.cos(phase)) * 0.9 : Math.sin(t * 2.4) * 0.3;
-  if (armed) {
-    u.arms[1].rotation.set(0.12, 0, 1.38); // right arm raised, pointing forward
-    const [l, h, w] = GUN_SIZE[wpn] || GUN_SIZE.pistol;
-    u.gun.visible = true;
-    u.gunMesh.scale.set(l, h, w);
-    u.gunMesh.position.set(0, -l / 2 + 2, 0);
-    u.gunMesh.material = wpn === 'rocket' ? M('#5a8a4a', { rough: 0.5, metal: 0.3 }) : M('#2d323b', { rough: 0.35, metal: 0.7 });
-  } else {
-    u.arms[1].rotation.set(0, 0, moving ? swing * 0.8 : -0.05 * Math.sin(t * 2));
-    u.gun.visible = false;
-  }
-  const e = hurt > 0 ? Math.min(0.5, hurt * 1.5) : 0;
-  for (const m of u.mats) { m.emissive.setRGB(e, 0.05 * e, 0.1 * e); }
-}
+// ---------- hero / NPC: realistic human (see human3d.js) ----------
+export function buildCharacter(look) { return buildHuman(look, { lod: 'high' }); }
+export function poseCharacter(o, state) { poseHuman(o, state); }
 
 // ---------- companion creatures ----------
 export function buildCreature(type, evolved) {
@@ -359,6 +252,7 @@ export function buildCar(color) {
     root.add(mesh(G.box(0.8, 2.2, 3.6), head, 15.1, 8.4, z));
     root.add(mesh(G.box(0.8, 2, 3.6), tail, -15.1, 8.4, z));
   }
+  root.scale.setScalar(1.3); // car-sized next to a realistic 26.5-unit person
   return root;
 }
 
@@ -391,9 +285,10 @@ export class ModelKit {
   // multiplayer positions too).
   step(e, x, y, dt) {
     let moving = false;
+    e.mx = 0; e.my = 0;
     if (e.lx !== null) {
       const d = Math.hypot(x - e.lx, y - e.ly);
-      if (d < 60) { e.phase += d * 0.32; moving = d / Math.max(dt, 1e-3) > 8; }
+      if (d < 60) { e.phase += d * 0.32; moving = d / Math.max(dt, 1e-3) > 8; e.mx = x - e.lx; e.my = y - e.ly; }
     }
     e.lx = x; e.ly = y;
     return moving;

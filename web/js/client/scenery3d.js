@@ -582,12 +582,14 @@ export class UltraScene {
       const big = r.w >= 5;
       const W = r.w * TILE, D = r.h * TILE;
       const floors = this.tall ? (big ? 5 + Math.floor(rand() * 7) : 2) : 0;
-      const hw = this.tall ? floors * 24 : big ? 60 : 40;
+      // street level: realistic storeys (36 units ≈ 2.4 m beside a 26.5-unit person); overhead keeps them short
+      const FLOOR = this.tall ? 36 : 24;
+      const hw = this.tall ? floors * FLOOR : big ? 60 : 40;
       const style = big ? Math.floor(rand() * FACADES.length) : [0, 3, 1][Math.floor(rand() * 3)];
       const fac = facade(style, this.aniso);
       const side = (faceW) => {
         const m = keep(new THREE.MeshStandardMaterial({ roughness: fac.rough, metalness: fac.metal, transparent: true }));
-        m.map = keep(fac.map.clone()); m.map.repeat.set(faceW / 128, hw / 96); m.map.needsUpdate = true;
+        m.map = keep(fac.map.clone()); m.map.repeat.set(faceW / 128, hw / (FLOOR * 4)); m.map.needsUpdate = true;
         m.emissiveMap = keep(fac.emissive.clone()); m.emissiveMap.repeat.copy(m.map.repeat); m.emissiveMap.needsUpdate = true;
         m.emissive = new THREE.Color('#ffffff'); m.emissiveIntensity = 1.5;
         return m;
@@ -610,9 +612,10 @@ export class UltraScene {
         const dm = keep(new THREE.MeshStandardMaterial({ color: '#4a2f1a', roughness: 0.6, transparent: true }));
         const aw = keep(new THREE.MeshStandardMaterial({ color: roofCol, roughness: 0.7, transparent: true }));
         const lm = keep(new THREE.MeshStandardMaterial({ color: '#ffd28a', emissive: new THREE.Color('#ffc46a'), emissiveIntensity: 3, transparent: true }));
-        const d1 = new THREE.Mesh(boxG(14, 20, 1.2), dm); d1.position.set(dx, 10, fz + 0.4);
-        const a1 = new THREE.Mesh(boxG(22, 1.6, 7), aw); a1.position.set(dx, 22.5, fz + 3.4); a1.castShadow = true;
-        const l1 = new THREE.Mesh(boxG(6, 1.4, 1.2), lm); l1.position.set(dx, 25.5, fz + 0.6);
+        const dh = this.tall ? 30 : 24; // door height (a person is 26.5)
+        const d1 = new THREE.Mesh(boxG(15, dh, 1.2), dm); d1.position.set(dx, dh / 2, fz + 0.4);
+        const a1 = new THREE.Mesh(boxG(22, 1.6, 7), aw); a1.position.set(dx, dh + 2.5, fz + 3.4); a1.castShadow = true;
+        const l1 = new THREE.Mesh(boxG(6, 1.4, 1.2), lm); l1.position.set(dx, dh + 5.5, fz + 0.6);
         this.group.add(d1, a1, l1);
         mats.push(dm, aw, lm);
       }
@@ -695,10 +698,10 @@ export class UltraScene {
     }
     const n = spots.length;
     const metal = keep(new THREE.MeshStandardMaterial({ color: '#2b2f36', roughness: 0.4, metalness: 0.7 }));
-    const poleG = keep(new THREE.CylinderGeometry(0.9, 1.3, 54, 8)); poleG.translate(0, 27, 0);
-    const armG = keep(new THREE.BoxGeometry(12, 1.4, 1.4)); armG.translate(6, 53, 0);
-    const headG = keep(new THREE.BoxGeometry(6, 2.4, 4)); headG.translate(11, 52, 0);
-    const bulbG = keep(new THREE.BoxGeometry(4.4, 0.8, 3)); bulbG.translate(11, 50.6, 0);
+    const poleG = keep(new THREE.CylinderGeometry(0.9, 1.3, 70, 8)); poleG.translate(0, 35, 0);
+    const armG = keep(new THREE.BoxGeometry(12, 1.4, 1.4)); armG.translate(6, 69, 0);
+    const headG = keep(new THREE.BoxGeometry(6, 2.4, 4)); headG.translate(11, 68, 0);
+    const bulbG = keep(new THREE.BoxGeometry(4.4, 0.8, 3)); bulbG.translate(11, 66.6, 0);
     const bulbM = keep(new THREE.MeshStandardMaterial({ color: '#ffe2a8', emissive: new THREE.Color('#ffd28a'), emissiveIntensity: 5 }));
     const pc = canvas(64, 64), pg = pc.getContext('2d');
     const grad = pg.createRadialGradient(32, 32, 2, 32, 32, 32);

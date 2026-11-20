@@ -370,7 +370,7 @@ export class Renderer3D {
       case 'pdie': this.burst(e.x, e.y, '#ffffff', 24, 180, 0.8, 4); break;
       case 'pick': this.burst(e.x, e.y, e.k === 'health' ? '#ff6b8b' : e.k === 'ammo' ? '#ffd23f' : '#c99558', 10, 90, 0.5, 3); this.floatText(e.x, e.y, e.k === 'health' ? '+HP' : e.k === 'ammo' ? '+AMMO' : '+CRATE', '#ffffff'); break;
       case 'spawn': this.burst(e.x, e.y, '#7c4dff', 10, 60, 0.6, 3); this.rings.push({ x: e.x, y: e.y, r: 18, life: 0.4, max: 0.4, col: '#9a6bff' }); break;
-      case 'shot': this.parts.push({ x: e.x, y: e.y, h: 14, vx: 0, vy: 0, vh: 0, life: 0.06, max: 0.06, col: new THREE.Color('#fff0aa').multiplyScalar(this.ultra ? 3 : 1), size: 7, still: true }); break;
+      case 'shot': this.parts.push({ x: e.x, y: e.y, h: 18, vx: 0, vy: 0, vh: 0, life: 0.06, max: 0.06, col: new THREE.Color('#fff0aa').multiplyScalar(this.ultra ? 3 : 1), size: 7, still: true }); break;
       default:
     }
   }
@@ -453,12 +453,12 @@ export class Renderer3D {
     const yaw = scene.camYaw || 0;
     const fx = Math.cos(yaw), fz = Math.sin(yaw);
     const inCar = !!me.car;
-    const back = inCar ? 96 : 74, up = inCar ? 46 : 38;
+    const back = inCar ? 104 : 64, up = inCar ? 50 : 33;
     let px = me.x, pz = me.y;
     if (inCar && scene.carPos) { px = scene.carPos.x; pz = scene.carPos.y; }
     this.cam.x = px; this.cam.y = pz;
     // over the right shoulder, so the hero sits left of the crosshair
-    const SH = 13, rx = -fz, rz = fx;
+    const SH = 10, rx = -fz, rz = fx;
     // march along the camera's real path (back + shoulder offset) until a building,
     // wall or tree would be hit, then stop short of it
     let dist = back;
@@ -479,7 +479,7 @@ export class Renderer3D {
     if (this.shake > 0) { shx = (Math.random() - 0.5) * 6 * this.shake; shz = (Math.random() - 0.5) * 6 * this.shake; }
     if (this.camera.fov !== STREET_FOV) { this.camera.fov = STREET_FOV; this.camera.near = 2; this.camera.far = 4000; this.camera.updateProjectionMatrix(); }
     this.camera.position.set(S.x + shx, S.y, S.z + shz);
-    this.camera.lookAt(px + fx * 90 + sx * 0.6, 26, pz + fz * 90 + sz * 0.6);
+    this.camera.lookAt(px + fx * 90 + sx * 0.6, 21, pz + fz * 90 + sz * 0.6);
     this.camera.updateMatrixWorld();
     this.placeSun(px + fx * 220, pz + fz * 220, SUN_LOW.clone().multiplyScalar(900), 620);
     return { street: true, px, pz, r: 1500 };
@@ -551,9 +551,9 @@ export class Renderer3D {
       const m = this.bullets.next();
       const [, r] = BULLET_COLORS[b.kind] || BULLET_COLORS.pistol;
       m.material = this.bulletMats[b.kind] || this.bulletMats.pistol;
-      m.position.set(b.x, 14, b.y);
+      m.position.set(b.x, 18, b.y);
       m.scale.setScalar(r * (street ? 0.8 : 1.1));
-      if (b.kind === 'rocket') this.parts.push({ x: b.x, y: b.y, h: 14, vx: 0, vy: 0, vh: 20, life: 0.3, max: 0.3, col: new THREE.Color('#9a9a9a'), size: 4 });
+      if (b.kind === 'rocket') this.parts.push({ x: b.x, y: b.y, h: 18, vx: 0, vy: 0, vh: 20, life: 0.3, max: 0.3, col: new THREE.Color('#9a9a9a'), size: 4 });
     }
     for (const r of this.rings) {
       r.life -= dt;
@@ -623,7 +623,7 @@ export class Renderer3D {
       const moving = K.step(e, p.x, p.y, dt) || p.moving;
       e.obj.position.set(p.x, 0, p.y);
       e.obj.rotation.y = -p.ang;
-      poseCharacter(e.obj, { phase: e.phase, moving, wpn: p.wpn, hurt: p.hurtFlash || 0, t: t + p.id });
+      poseCharacter(e.obj, { phase: e.phase, moving, wpn: p.wpn, hurt: p.hurtFlash || 0, t: t + p.id, motion: [e.mx, e.my], ang: p.ang });
     }
   }
 
@@ -719,7 +719,7 @@ export class Renderer3D {
     const onScreen = (s) => !s.behind && s.x > -40 && s.x < Wc + 40 && s.y > -40 && s.y < Hc + 40;
     for (const n of scene.npcs) {
       if (!near(n)) continue;
-      const s = this.project(n.x, n.y, 52);
+      const s = this.project(n.x, n.y, this.detailed ? 40 : 52);
       if (!onScreen(s)) continue;
       const bob = Math.sin(this.time * 3) * 2;
       g.font = '14px "Press Start 2P", monospace'; g.textAlign = 'center';
@@ -736,7 +736,7 @@ export class Renderer3D {
       if (p.dead || p.car || !near(p)) continue;
       const isMe = p === me;
       if (isMe && (!scene.multi || street)) continue;
-      const s = this.project(p.x, p.y, 46);
+      const s = this.project(p.x, p.y, this.detailed ? 34 : 46);
       if (!onScreen(s)) continue;
       this.label(`${p.name}${scene.pvp ? '' : ' Lv' + p.level}`, s.x, s.y - 8, isMe ? '#9fe8ff' : '#ffffff');
       if (!isMe) this.bar(s.x, s.y, 30, p.hp / p.maxHp, '#5be37a');
@@ -766,7 +766,7 @@ export class Renderer3D {
 
   // Street level: a small reticle where shots go (chest height, ahead of the hero).
   crosshair(me) {
-    const s = this.project(me.x + Math.cos(me.ang) * 280, me.y + Math.sin(me.ang) * 280, 14);
+    const s = this.project(me.x + Math.cos(me.ang) * 280, me.y + Math.sin(me.ang) * 280, 18);
     if (s.behind) return;
     const g = this.g;
     g.strokeStyle = 'rgba(29,26,43,0.9)'; g.lineWidth = 4;
