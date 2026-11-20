@@ -1,24 +1,38 @@
-// 3D "handheld console" renderer (WebGL via three.js).
-// Tilted perspective camera, extruded buildings with pitched roofs, low-poly
-// trees and cars, sunlight with real shadows, fog, and the game's pixel-art
-// characters standing in the world as camera-facing sprites.
-// It draws the same "scene" lists as the classic 2D renderer, so the game
-// logic and multiplayer code do not change.
+// 3D renderer (WebGL via three.js). Draws the same "scene" lists as the classic
+// 2D renderer, so game logic and multiplayer do not change.
+//
+// Settings:
+//  quality: 'ultra' | 'high' | 'fast'
+//    ultra = PS3-era look: 3D models, golden-hour sky + reflections, ACES tone
+//            mapping, bloom, colour grade, FXAA, soft shadows.
+//    high  = bright handheld look (pixel sprites) with shadows; fast = no shadows.
+//  camera: 'overhead' (tilted view from above) | 'street' (third-person, behind
+//    the hero's shoulder). Street level always uses 3D models and the detailed city.
 import * as THREE from '../../vendor/three.module.min.js';
+import { EffectComposer } from '../../vendor/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from '../../vendor/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from '../../vendor/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from '../../vendor/jsm/postprocessing/OutputPass.js';
+import { ShaderPass } from '../../vendor/jsm/postprocessing/ShaderPass.js';
+import { FXAAShader } from '../../vendor/jsm/shaders/FXAAShader.js';
+import { Sky } from '../../vendor/jsm/objects/Sky.js';
 import { TILE } from '../shared/data.js';
 import { T, tileAt } from '../shared/maps.js';
-import { charSprite, petSprite, enemySprite, pickupSprite, renderGround, renderMini, CAR_COLORS, ROOFS, shade } from './art.js';
+import { charSprite, petSprite, enemySprite, pickupSprite, renderMini, CAR_COLORS } from './art.js';
+import { MapScene, UltraScene } from './scenery3d.js';
+import { ModelKit, buildCharacter, poseCharacter, buildCreature, poseCreature, buildEnemy, poseEnemy, buildPickup, posePickup, buildCar } from './models3d.js';
 
-const PITCH = (54 * Math.PI) / 180; // camera looks down at 54 degrees
+const PITCH = (54 * Math.PI) / 180; // overhead camera looks down at 54 degrees
 const FOV = 34;
-const PUSH = 26; // sprites are slid toward the camera so they never clip into walls
-const SUN = new THREE.Vector3(-170, 420, 230); // sun offset from the camera target (south-west, high)
+const STREET_FOV = 60;
+const PUSH = 26; // overhead sprites are slid toward the camera so they never clip into walls
+const SUN = new THREE.Vector3(-170, 420, 230); // overhead: sun offset from the camera target
+const SUN_LOW = new THREE.Vector3(-620, 330, 420).normalize(); // detailed city: golden-hour sun direction
 
 const BULLET_COLORS = {
   pistol: ['#fff3a0', 3], uzi: ['#ffe066', 2.5], shotgun: ['#ffcf70', 2.5], rifle: ['#ffffff', 3], rocket: ['#ff7a3a', 5],
   fire: ['#ff8a2a', 4], water: ['#6cc8ff', 4], grass: ['#7ee06a', 4], spit: ['#a6e22e', 4.5],
 };
-const WALLS = ['#f2e6d0', '#ece0c8', '#f6efe4', '#eadcc6', '#f1e3cd', '#e9dfd2'];
 
 function facing(ang) {
   const c = Math.cos(ang), s = Math.sin(ang);
@@ -32,14 +46,7 @@ function canvas(w, h) {
   return c;
 }
 
-function pixelTex(cv, repeat = false) {
-  const t = new THREE.CanvasTexture(cv);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.magFilter = THREE.NearestFilter;
-  t.minFilter = THREE.LinearMipmapLinearFilter;
-  if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  return t;
-}
+function wrap(a) { return ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; }
 
 // ---------- shared sprite textures/materials (sprites are cached canvases) ----------
 const spriteMats = new Map();
@@ -69,291 +76,37 @@ class Pool {
   end() { for (let k = this.i; k < this.items.length; k++) this.items[k].visible = false; }
 }
 
-// Finds solid rectangles of one tile type (buildings, pillars, ponds are rectangles).
-function rects(map, type, skip) {
-  const seen = new Uint8Array(map.w * map.h);
-  const out = [];
-  for (let y = 0; y < map.h; y++) {
-    for (let x = 0; x < map.w; x++) {
-      if (seen[y * map.w + x] || tileAt(map, x, y) !== type || (skip && skip(x, y))) continue;
-      let x1 = x;
-      while (tileAt(map, x1 + 1, y) === type && !seen[y * map.w + x1 + 1] && !(skip && skip(x1 + 1, y))) x1++;
-      let y1 = y;
-      for (;;) {
-        let ok = true;
-        for (let k = x; k <= x1; k++) if (tileAt(map, k, y1 + 1) !== type || seen[(y1 + 1) * map.w + k] || (skip && skip(k, y1 + 1))) { ok = false; break; }
-        if (!ok) break;
-        y1++;
-      }
-      for (let yy = y; yy <= y1; yy++) for (let xx = x; xx <= x1; xx++) seen[yy * map.w + xx] = 1;
-      out.push({ x0: x, y0: y, x1, y1, w: x1 - x + 1, h: y1 - y + 1 });
-    }
-  }
-  return out;
-}
-
-// Gable roof prism, ridge along x. Origin at the base centre.
-function gableGeometry(w, d, rh) {
-  const x0 = -w / 2, x1 = w / 2, z0 = -d / 2, z1 = d / 2;
-  const fbl = [x0, 0, z1], fbr = [x1, 0, z1], bbl = [x0, 0, z0], bbr = [x1, 0, z0], rl = [x0, rh, 0], rr = [x1, rh, 0];
-  const slope = Math.hypot(rh, d / 2) / 8;
-  const tris = [
-    // front slope
-    [fbl, 0, 0], [fbr, w / 32, 0], [rr, w / 32, slope], [fbl, 0, 0], [rr, w / 32, slope], [rl, 0, slope],
-    // back slope
-    [bbr, 0, 0], [bbl, w / 32, 0], [rl, w / 32, slope], [bbr, 0, 0], [rl, w / 32, slope], [rr, 0, slope],
-    // gables
-    [bbl, 0, 0], [fbl, 0, 0], [rl, 0, 0], [fbr, 0, 0], [bbr, 0, 0], [rr, 0, 0],
-  ];
-  const pos = [], uv = [];
-  for (const [p, u, v] of tris) { pos.push(...p); uv.push(u, v); }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.computeVertexNormals();
-  return g;
-}
-
-// ---------- per-map 3D scenery (cached; at most the city and one arena) ----------
-class MapScene {
-  constructor(map, renderer) {
-    this.map = map;
-    this.group = new THREE.Group();
-    this.disposables = [];
-    this.fadeables = []; // { x0, x1, y0, height, mats, o }
-    this.waters = [];
-    const W = map.w * TILE, H = map.h * TILE;
-    const city = map.kind === 'city';
-    const keep = (o) => { this.disposables.push(o); return o; };
-
-    // Ground: the pixel-art map texture laid flat.
-    const gtex = keep(pixelTex(renderGround(map, true)));
-    gtex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-    const ground = new THREE.Mesh(keep(new THREE.PlaneGeometry(W, H)), keep(new THREE.MeshLambertMaterial({ map: gtex })));
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.set(W / 2, 0, H / 2);
-    ground.receiveShadow = true;
-    this.group.add(ground);
-    const apron = new THREE.Mesh(keep(new THREE.PlaneGeometry(W + 6000, H + 6000)), keep(new THREE.MeshLambertMaterial({ color: city ? '#4f9a3c' : '#1b1730' })));
-    apron.rotation.x = -Math.PI / 2;
-    apron.position.set(W / 2, -0.5, H / 2);
-    apron.receiveShadow = true;
-    this.group.add(apron);
-
-    if (city) this.buildCity(keep);
-    else this.buildArena(keep);
-  }
-
-  buildCity(keep) {
-    const map = this.map;
-    const shared = new Map();
-    const sideTex = (wall, hw) => {
-      const key = `${wall}${hw}`;
-      if (shared.has(key)) return shared.get(key);
-      const c = canvas(32, hw);
-      const g = c.getContext('2d');
-      g.fillStyle = wall; g.fillRect(0, 0, 32, hw);
-      g.fillStyle = shade(wall, -0.08); g.fillRect(0, hw - 4, 32, 4);
-      for (let fy = 6; fy + 12 < hw - 4; fy += 18) {
-        g.fillStyle = '#5e6f86'; g.fillRect(8, fy, 16, 12);
-        g.fillStyle = '#8ec9ef'; g.fillRect(9, fy + 1, 14, 10);
-        g.fillStyle = '#d6f0ff'; g.fillRect(9, fy + 1, 14, 3);
-        g.fillStyle = shade(wall, -0.2); g.fillRect(7, fy + 12, 18, 2);
-      }
-      const t = keep(pixelTex(c, true));
-      shared.set(key, t);
-      return t;
-    };
-    const shingle = (roof) => {
-      const key = 'r' + roof;
-      if (shared.has(key)) return shared.get(key);
-      const c = canvas(16, 16);
-      const g = c.getContext('2d');
-      g.fillStyle = roof; g.fillRect(0, 0, 16, 16);
-      g.fillStyle = shade(roof, -0.18); g.fillRect(0, 6, 16, 2); g.fillRect(0, 14, 16, 2);
-      g.fillStyle = shade(roof, 0.15); g.fillRect(0, 0, 16, 1); g.fillRect(0, 8, 16, 1);
-      g.fillStyle = shade(roof, -0.1); g.fillRect(5, 0, 1, 6); g.fillRect(12, 8, 1, 6);
-      const t = keep(pixelTex(c, true));
-      shared.set(key, t);
-      return t;
-    };
-    const boxGeo = new Map();
-    const box = (w, h, d) => {
-      const k = `${w},${h},${d}`;
-      if (!boxGeo.has(k)) boxGeo.set(k, keep(new THREE.BoxGeometry(w, h, d)));
-      return boxGeo.get(k);
-    };
-
-    for (const r of rects(map, T.BUILD)) {
-      const v0 = map.variant[r.y0 * map.w + r.x0];
-      const roof = ROOFS[v0 & 7] || ROOFS[1];
-      const wall = WALLS[(r.x0 * 7 + r.y0 * 3) % WALLS.length];
-      const big = r.w >= 5;
-      const hw = big ? 60 : 40;
-      const W = r.w * TILE, D = r.h * TILE;
-      // front wall with the door
-      let door = -1;
-      for (let x = r.x0; x <= r.x1; x++) if (map.variant[r.y1 * map.w + x] & 8) door = x - r.x0;
-      const fc = canvas(W, hw);
-      const fg = fc.getContext('2d');
-      fg.fillStyle = wall; fg.fillRect(0, 0, W, hw);
-      fg.fillStyle = shade(wall, -0.08); fg.fillRect(0, hw - 4, W, 4);
-      for (let col = 0; col < r.w; col++) {
-        const px = col * 32;
-        for (let fy = 6; fy + 12 < hw - 4; fy += 18) {
-          if (col === door && fy + 30 > hw) continue;
-          fg.fillStyle = '#5e6f86'; fg.fillRect(px + 8, fy, 16, 12);
-          fg.fillStyle = '#8ec9ef'; fg.fillRect(px + 9, fy + 1, 14, 10);
-          fg.fillStyle = '#d6f0ff'; fg.fillRect(px + 9, fy + 1, 14, 3);
-          fg.fillStyle = shade(wall, -0.2); fg.fillRect(px + 7, fy + 12, 18, 2);
-        }
-        if (col === door) {
-          fg.fillStyle = shade(roof, -0.1); fg.fillRect(px + 4, hw - 26, 24, 4); // awning
-          fg.fillStyle = '#6b4423'; fg.fillRect(px + 9, hw - 22, 14, 22);
-          fg.fillStyle = '#8a5a30'; fg.fillRect(px + 10, hw - 21, 12, 21);
-          fg.fillStyle = '#ffd23f'; fg.fillRect(px + 19, hw - 11, 2, 2);
-        }
-      }
-      const frontMat = keep(new THREE.MeshLambertMaterial({ map: keep(pixelTex(fc)), transparent: true }));
-      const sTex = sideTex(wall, hw);
-      const sideX = keep(new THREE.MeshLambertMaterial({ map: sTex.clone(), transparent: true }));
-      sideX.map.repeat.set(r.h, 1); sideX.map.needsUpdate = true; keep(sideX.map);
-      const backM = keep(new THREE.MeshLambertMaterial({ map: sTex.clone(), transparent: true }));
-      backM.map.repeat.set(r.w, 1); backM.map.needsUpdate = true; keep(backM.map);
-      const plain = keep(new THREE.MeshLambertMaterial({ color: wall, transparent: true }));
-      const body = new THREE.Mesh(box(W, hw, D), [sideX, sideX, plain, plain, frontMat, backM]);
-      body.position.set(r.x0 * TILE + W / 2, hw / 2, r.y0 * TILE + D / 2);
-      body.castShadow = true; body.receiveShadow = true;
-      this.group.add(body);
-      const mats = [frontMat, sideX, backM, plain];
-      let height = hw;
-      const roofTex = shingle(roof).clone();
-      keep(roofTex); roofTex.needsUpdate = true;
-      if (big) {
-        const slabMat = keep(new THREE.MeshLambertMaterial({ map: roofTex, transparent: true }));
-        roofTex.repeat.set(W / 16, D / 16);
-        const rimMat = keep(new THREE.MeshLambertMaterial({ color: shade(roof, -0.25), transparent: true }));
-        const slab = new THREE.Mesh(box(W + 6, 6, D + 6), [rimMat, rimMat, slabMat, rimMat, rimMat, rimMat]);
-        slab.position.set(body.position.x, hw + 3, body.position.z);
-        slab.castShadow = true; slab.receiveShadow = true;
-        this.group.add(slab);
-        const unitMat = keep(new THREE.MeshLambertMaterial({ color: '#b9bec7', transparent: true }));
-        const unit = new THREE.Mesh(box(26, 12, 18), unitMat);
-        unit.position.set(body.position.x - W / 4, hw + 12, body.position.z - D / 5);
-        unit.castShadow = true;
-        this.group.add(unit);
-        mats.push(slabMat, rimMat, unitMat);
-        height = hw + 18;
-      } else {
-        const rh = 22;
-        const roofMat = keep(new THREE.MeshLambertMaterial({ map: roofTex, transparent: true, side: THREE.DoubleSide }));
-        const gm = new THREE.Mesh(keep(gableGeometry(W + 8, D + 8, rh)), roofMat);
-        gm.position.set(body.position.x, hw, body.position.z);
-        gm.castShadow = true; gm.receiveShadow = true;
-        this.group.add(gm);
-        mats.push(roofMat);
-        height = hw + rh;
-      }
-      this.fadeables.push({ x0: r.x0 * TILE, x1: (r.x1 + 1) * TILE, y0: r.y0 * TILE, y1: (r.y1 + 1) * TILE, height, mats, o: 1 });
-    }
-
-    // Trees: low-poly trunks and canopies (instanced).
-    const trees = [];
-    for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) if (tileAt(map, x, y) === T.TREE) trees.push([x, y]);
-    if (trees.length) {
-      const trunkGeo = keep(new THREE.CylinderGeometry(3, 4.5, 16, 6)); trunkGeo.translate(0, 8, 0);
-      const leafGeo = keep(new THREE.IcosahedronGeometry(13, 0)); leafGeo.translate(0, 22, 0);
-      const topGeo = keep(new THREE.IcosahedronGeometry(8, 0)); topGeo.translate(0, 31, 0);
-      const trunks = new THREE.InstancedMesh(trunkGeo, keep(new THREE.MeshLambertMaterial({ color: '#7a5226', flatShading: true })), trees.length);
-      const leafMat = keep(new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true }));
-      const leaves = new THREE.InstancedMesh(leafGeo, leafMat, trees.length);
-      const tops = new THREE.InstancedMesh(topGeo, leafMat, trees.length);
-      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color();
-      const greens = ['#2f8a3e', '#3a9a45', '#2c7f3a', '#46a64c'];
-      trees.forEach(([x, y], i) => {
-        const h = ((x * 928371 + y * 12377) % 100) / 100;
-        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), h * 6.28);
-        const sc = 0.9 + h * 0.25;
-        s.set(sc, sc, sc);
-        p.set((x + 0.5) * TILE, 0, (y + 0.5) * TILE);
-        m.compose(p, q, s);
-        trunks.setMatrixAt(i, m); leaves.setMatrixAt(i, m); tops.setMatrixAt(i, m);
-        col.set(greens[Math.floor(h * 4) % 4]); leaves.setColorAt(i, col);
-        col.set(greens[(Math.floor(h * 4) + 3) % 4]).offsetHSL(0, 0, 0.06); tops.setColorAt(i, col);
-      });
-      for (const im of [trunks, leaves, tops]) { im.castShadow = true; im.receiveShadow = true; this.group.add(im); }
-    }
-
-    // Ponds: a glossy translucent surface over the water tiles.
-    for (const r of rects(map, T.WATER)) {
-      const mat = keep(new THREE.MeshPhongMaterial({ color: '#4fb0ec', transparent: true, opacity: 0.55, shininess: 120, specular: '#ffffff' }));
-      const plane = new THREE.Mesh(keep(new THREE.PlaneGeometry(r.w * TILE - 6, r.h * TILE - 6)), mat);
-      plane.rotation.x = -Math.PI / 2;
-      plane.position.set(r.x0 * TILE + (r.w * TILE) / 2, 1.5, r.y0 * TILE + (r.h * TILE) / 2);
-      plane.receiveShadow = true;
-      this.group.add(plane);
-      this.waters.push(mat);
-    }
-  }
-
-  buildArena(keep) {
-    const map = this.map;
-    const c = canvas(32, 32);
-    const g = c.getContext('2d');
-    g.fillStyle = '#5b4b7a'; g.fillRect(0, 0, 32, 32);
-    g.fillStyle = '#51416f';
-    for (let row = 0; row < 4; row++) for (let k = 0; k < 2; k++) g.fillRect(((row % 2) * 8 + k * 16) % 32, row * 8 + 1, 14, 6);
-    g.fillStyle = '#7a68a0'; g.fillRect(0, 0, 32, 1);
-    const brick = keep(pixelTex(c, true));
-    const topMat = keep(new THREE.MeshLambertMaterial({ color: '#8a78b0' }));
-    const make = (r, h, fade) => {
-      const W = r.w * TILE, D = r.h * TILE;
-      const side = (rep) => { const t = brick.clone(); t.repeat.set(rep, h / 32); t.needsUpdate = true; keep(t); return keep(new THREE.MeshLambertMaterial({ map: t, transparent: fade })); };
-      const sx = side(r.h), sz = side(r.w);
-      const top = fade ? keep(topMat.clone()) : topMat;
-      if (fade) top.transparent = true;
-      const m = new THREE.Mesh(keep(new THREE.BoxGeometry(W, h, D)), [sx, sx, top, top, sz, sz]);
-      m.position.set(r.x0 * TILE + W / 2, h / 2, r.y0 * TILE + D / 2);
-      m.castShadow = true; m.receiveShadow = true;
-      this.group.add(m);
-      if (fade) this.fadeables.push({ x0: r.x0 * TILE, x1: (r.x1 + 1) * TILE, y0: r.y0 * TILE, y1: (r.y1 + 1) * TILE, height: h, mats: [sx, sz, top], o: 1 });
-    };
-    const edge = (x, y) => x === 0 || y === 0 || x === map.w - 1 || y === map.h - 1;
-    // outer walls: tall at the back, low at the front so nothing hides behind them
-    make({ x0: 0, y0: 0, x1: map.w - 1, y1: 0, w: map.w, h: 1 }, 44, false);
-    make({ x0: 0, y0: 1, x1: 0, y1: map.h - 2, w: 1, h: map.h - 2 }, 36, false);
-    make({ x0: map.w - 1, y0: 1, x1: map.w - 1, y1: map.h - 2, w: 1, h: map.h - 2 }, 36, false);
-    make({ x0: 0, y0: map.h - 1, x1: map.w - 1, y1: map.h - 1, w: map.w, h: 1 }, 10, false);
-    for (const r of rects(map, T.WALL, edge)) make(r, 40, true);
-    // glowing floor runes for atmosphere
-    const runeMat = keep(new THREE.MeshBasicMaterial({ color: '#7c4dff', transparent: true, opacity: 0.35 }));
-    const ring = keep(new THREE.RingGeometry(70, 76, 40));
-    const rune = new THREE.Mesh(ring, runeMat);
-    rune.rotation.x = -Math.PI / 2;
-    rune.position.set(map.spawn.x, 0.8, map.spawn.y);
-    this.group.add(rune);
-    this.waters.push(runeMat);
-  }
-
-  dispose() {
-    for (const d of this.disposables) d.dispose();
-    this.disposables = [];
-  }
-}
+// Colour grade + vignette, applied after tone mapping.
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, sat: { value: 1.12 }, contrast: { value: 1.06 }, vig: { value: 0.32 }, tint: { value: new THREE.Vector3(1.03, 1.0, 0.96) } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float sat; uniform float contrast; uniform float vig; uniform vec3 tint; varying vec2 vUv;
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+      c.rgb = mix(vec3(l), c.rgb, sat);
+      c.rgb = (c.rgb - 0.5) * contrast + 0.5;
+      c.rgb *= tint;
+      vec2 d = vUv - 0.5;
+      c.rgb *= 1.0 - vig * smoothstep(0.25, 0.85, dot(d, d) * 2.2);
+      gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), c.a);
+    }`,
+};
 
 export class Renderer3D {
-  constructor(glCanvas, overlayCanvas, { quality = 'high' } = {}) {
+  constructor(glCanvas, overlayCanvas, { quality = 'high', camera = 'overhead' } = {}) {
     this.kind = '3d';
     this.quality = quality;
+    this.cameraMode = camera;
     this.glCv = glCanvas;
     this.cv = overlayCanvas;
     this.g = overlayCanvas.getContext('2d');
-    this.gl = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: quality === 'high', powerPreference: 'high-performance' });
-    this.gl.shadowMap.enabled = quality === 'high';
+    this.gl = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: false, powerPreference: 'high-performance' });
     this.gl.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(FOV, 1, 20, 4000);
     this.cam = { x: 0, y: 0 };
+    this.street = { x: 0, y: 0, z: 0, ready: false }; // smoothed street camera position
     this.shake = 0;
     this.time = 0;
     this.aimYScale = 1 / Math.sin(PITCH);
@@ -370,10 +123,7 @@ export class Renderer3D {
     this.hemi = new THREE.HemisphereLight('#ffffff', '#b8a888', 1.9);
     this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight('#fff4dc', 2.1);
-    this.sun.castShadow = quality === 'high';
     this.sun.shadow.mapSize.set(2048, 2048);
-    const sc = this.sun.shadow.camera;
-    sc.left = -520; sc.right = 520; sc.top = 520; sc.bottom = -520; sc.near = 10; sc.far = 1400;
     this.sun.shadow.bias = -0.0006;
     this.sun.shadow.normalBias = 0.6;
     this.scene.add(this.sun);
@@ -394,15 +144,17 @@ export class Renderer3D {
     const flat = new THREE.PlaneGeometry(1, 1);
     flat.rotateX(-Math.PI / 2);
     this.blobs = new Pool(this.dyn, () => { const m = new THREE.Mesh(flat, shadowMat); m.renderOrder = 1; return m; });
-    const ball = new THREE.SphereGeometry(1, 8, 6);
+    const ball = new THREE.SphereGeometry(1, 10, 8);
     this.bulletMats = {};
-    for (const [k, [col]] of Object.entries(BULLET_COLORS)) this.bulletMats[k] = new THREE.MeshBasicMaterial({ color: col });
+    // bullets glow: colours above 1.0 are picked up by bloom in Ultra
+    for (const [k, [col]] of Object.entries(BULLET_COLORS)) this.bulletMats[k] = new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(2.6) });
     this.bullets = new Pool(this.dyn, () => new THREE.Mesh(ball, this.bulletMats.pistol));
     const gunGeo = new THREE.BoxGeometry(1, 1, 1);
     gunGeo.translate(0.5, 0, 0);
     this.gunMats = { dark: new THREE.MeshLambertMaterial({ color: '#3a3f4a' }), rocket: new THREE.MeshLambertMaterial({ color: '#5a8a4a' }) };
     this.guns = new Pool(this.dyn, () => { const m = new THREE.Mesh(gunGeo, this.gunMats.dark); m.castShadow = true; return m; });
     this.carPool = new Pool(this.dyn, () => this.makeCar());
+    this.models = new ModelKit(this.dyn);
     // voxel particles
     this.maxParts = 700;
     this.partMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: '#ffffff' }), this.maxParts);
@@ -418,28 +170,81 @@ export class Renderer3D {
     const mk = new THREE.Group();
     const mring = new THREE.Mesh(new THREE.RingGeometry(20, 26, 32), new THREE.MeshBasicMaterial({ color: '#ffd23f', transparent: true, opacity: 0.85, side: THREE.DoubleSide }));
     mring.rotation.x = -Math.PI / 2; mring.position.y = 1;
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(18, 22, 160, 20, 1, true), new THREE.MeshBasicMaterial({ color: '#ffe680', transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }));
-    beam.position.y = 80;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(18, 22, 220, 20, 1, true), new THREE.MeshBasicMaterial({ color: '#ffe680', transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }));
+    beam.position.y = 110;
     mk.add(mring, beam);
     mk.visible = false;
     this.marker = mk;
     this.scene.add(mk);
-    this.resize();
+    this.applySettings();
   }
 
-  // ---------- setup ----------
-  setQuality(q) {
-    if (q === this.quality) return;
-    this.quality = q;
-    const shadows = q === 'high';
+  // ---------- settings ----------
+  get ultra() { return this.quality === 'ultra'; }
+  // Detailed city + 3D models: Ultra, or the street-level camera at any quality.
+  get detailed() { return this.ultra || this.cameraMode === 'street'; }
+
+  setQuality(q) { if (q !== this.quality) { this.quality = q; this.applySettings(); } }
+  setCamera(c) { if (c !== this.cameraMode) { this.cameraMode = c; this.applySettings(); } }
+
+  applySettings() {
+    const shadows = this.quality !== 'fast';
     this.gl.shadowMap.enabled = shadows;
     this.sun.castShadow = shadows;
-    this.scene.traverse((o) => {
-      if (!o.material) return;
-      for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.needsUpdate = true;
-    });
-    for (const ms of this.sceneCache.values()) if (ms !== this.mapScene) ms.group.traverse((o) => { if (o.material) for (const m of [].concat(o.material)) m.needsUpdate = true; });
+    this.gl.toneMapping = this.ultra ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+    this.gl.toneMappingExposure = 0.78;
+    if (this.ultra && !this.composer) this.buildComposer();
+    // materials must recompile when shadows or tone mapping change
+    const touch = (root) => root.traverse((o) => { if (o.material) for (const m of [].concat(o.material)) m.needsUpdate = true; });
+    touch(this.scene);
+    for (const ms of this.sceneCache.values()) touch(ms.group);
+    this.models.clear();
     this.resize();
+    if (this.map) this.setMap(this.map, true);
+  }
+
+  buildComposer() {
+    const c = new EffectComposer(this.gl);
+    c.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.38, 0.5, 0.95);
+    c.addPass(this.bloom);
+    c.addPass(new OutputPass());
+    c.addPass(new ShaderPass(GradeShader));
+    this.fxaa = new ShaderPass(FXAAShader);
+    c.addPass(this.fxaa);
+    this.composer = c;
+  }
+
+  // Sky rendered once into a cube map: the background and the reflections on
+  // paint, glass and water (PBR environment). City = golden hour; arena = neon dusk.
+  skyEnvironment(city) {
+    const key = city ? 'city' : 'arena';
+    this.envCache = this.envCache || {};
+    if (this.envCache[key]) return this.envCache[key];
+    const skyScene = new THREE.Scene();
+    if (city) {
+      const sky = new Sky();
+      sky.scale.setScalar(1000);
+      const u = sky.material.uniforms;
+      u.turbidity.value = 3.2; u.rayleigh.value = 2.6; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.82;
+      u.sunPosition.value.copy(SUN_LOW).multiplyScalar(1000);
+      skyScene.add(sky);
+    } else {
+      const m = new THREE.ShaderMaterial({
+        side: THREE.BackSide, depthWrite: false,
+        vertexShader: 'varying vec3 p; void main(){ p = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+        fragmentShader: 'varying vec3 p; void main(){ float h = normalize(p).y; vec3 top = vec3(0.05,0.03,0.12); vec3 mid = vec3(0.32,0.12,0.42); vec3 c = mix(mid, top, smoothstep(0.0,0.6,h)); c += vec3(0.1,0.5,0.7) * pow(max(0.0, 1.0 - abs(h)*4.0), 3.0); gl_FragColor = vec4(c,1.0); }',
+      });
+      skyScene.add(new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), m));
+    }
+    const rt = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType });
+    const cubeCam = new THREE.CubeCamera(1, 2000, rt);
+    cubeCam.update(this.gl, skyScene);
+    const pmrem = new THREE.PMREMGenerator(this.gl);
+    const env = pmrem.fromCubemap(rt.texture).texture;
+    pmrem.dispose();
+    this.envCache[key] = { background: rt.texture, env };
+    return this.envCache[key];
   }
 
   // rect: where the game view sits on the page (CSS px); see the 2D renderer.
@@ -452,22 +257,31 @@ export class Renderer3D {
     this.dpr = dpr;
     this.cv.width = Math.round(w * dpr); this.cv.height = Math.round(h * dpr);
     Object.assign(this.cv.style, { left: rect.x + 'px', top: rect.y + 'px', width: w + 'px', height: h + 'px' });
-    this.gl.setPixelRatio(Math.min(dpr, this.quality === 'high' ? 2 : 1.5));
+    const pr = Math.min(dpr, this.quality === 'fast' ? 1.5 : 2);
+    this.gl.setPixelRatio(pr);
     this.gl.setSize(w, h, true);
     Object.assign(this.glCv.style, { left: rect.x + 'px', top: rect.y + 'px' });
+    if (this.composer) {
+      this.composer.setPixelRatio(pr);
+      this.composer.setSize(w, h);
+      this.fxaa.material.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
+    }
     this.camera.aspect = w / h;
-    // Frame about 9 tiles of ground vertically in landscape; in portrait keep ~7.5 tiles across.
+    // Overhead: frame about 9 tiles vertically in landscape; ~7.5 tiles across in portrait.
     const tiles = h > w ? (7.5 * h) / w : 9;
     this.dist = (tiles * TILE * Math.sin(PITCH)) / (2 * Math.tan(((FOV / 2) * Math.PI) / 180));
     this.camera.updateProjectionMatrix();
   }
 
-  setMap(map) {
+  setMap(map, force = false) {
+    const changed = this.map !== map;
     this.map = map;
-    const key = `${map.kind}:${map.seed}`;
+    const street = this.cameraMode === 'street';
+    const style = this.detailed ? 'ultra' : 'classic';
+    const key = `${map.kind}:${map.seed}:${style}:${street ? 'tall' : 'low'}`;
     let ms = this.sceneCache.get(key);
     if (!ms) {
-      ms = new MapScene(map, this.gl);
+      ms = style === 'ultra' ? new UltraScene(map, this.gl, { tall: street }) : new MapScene(map, this.gl);
       ms.mini = renderMini(map);
       this.sceneCache.set(key, ms);
       if (this.sceneCache.size > 2) {
@@ -482,20 +296,43 @@ export class Renderer3D {
     this.mapScene = ms;
     this.scene.add(ms.group);
     this.mini = ms.mini;
-    const city = map.kind === 'city';
-    const sky = city ? '#a9dcf5' : '#2a2342';
-    this.scene.background = new THREE.Color(sky);
-    this.scene.fog = new THREE.Fog(sky, this.dist * 1.15, this.dist * 2.8);
-    this.hemi.color.set(city ? '#ffffff' : '#d9d0ff');
-    this.hemi.groundColor.set(city ? '#b8a888' : '#4a3f6a');
-    this.hemi.intensity = city ? 1.9 : 1.7;
-    this.sun.color.set(city ? '#fff4dc' : '#e6d8ff');
-    this.parts = []; this.texts = []; this.rings = [];
+    this.setLighting(map.kind === 'city');
+    if (changed || !force) { this.parts = []; this.texts = []; this.rings = []; }
+    this.street.ready = false;
   }
 
-  snapCamera(x, y) { this.cam.x = x; this.cam.y = y; }
+  setLighting(city) {
+    const s = this.scene;
+    if (this.detailed) {
+      const sky = this.skyEnvironment(city);
+      s.background = sky.background;
+      s.environment = sky.env;
+      s.environmentIntensity = city ? 0.4 : 0.7;
+      const fogCol = city ? '#a8836f' : '#2a1b3a';
+      const street = this.cameraMode === 'street';
+      s.fog = street ? new THREE.Fog(fogCol, 750, 2800) : new THREE.Fog(fogCol, this.dist * 1.4, this.dist * 3.4);
+      this.hemi.color.set(city ? '#a9c0ea' : '#8e7fd8');
+      this.hemi.groundColor.set(city ? '#6b4a3a' : '#2a2140');
+      this.hemi.intensity = city ? 0.55 : 0.7;
+      this.sun.color.set(city ? '#ffc98e' : '#c6b6ff');
+      this.sun.intensity = city ? 2.4 : 1.5;
+      if (!this.ultra) { this.hemi.intensity *= 1.4; this.sun.intensity *= 0.85; } // no tone mapping: keep it bright
+    } else {
+      const sky = city ? '#a9dcf5' : '#2a2342';
+      s.background = new THREE.Color(sky);
+      s.environment = null;
+      s.fog = new THREE.Fog(sky, this.dist * 1.15, this.dist * 2.8);
+      this.hemi.color.set(city ? '#ffffff' : '#d9d0ff');
+      this.hemi.groundColor.set(city ? '#b8a888' : '#4a3f6a');
+      this.hemi.intensity = city ? 1.9 : 1.7;
+      this.sun.color.set(city ? '#fff4dc' : '#e6d8ff');
+      this.sun.intensity = 2.1;
+    }
+  }
 
-  // ---------- projection helpers ----------
+  snapCamera(x, y) { this.cam.x = x; this.cam.y = y; this.street.ready = false; }
+
+  // ---------- projection helpers (canvas-local CSS px) ----------
   project(x, y, h = 0) {
     this.v.set(x, h, y).project(this.camera);
     const w = this.cv.width / this.dpr, hh = this.cv.height / this.dpr;
@@ -512,6 +349,7 @@ export class Renderer3D {
   // ---------- effects ----------
   burst(x, y, color, n, speed = 120, life = 0.4, size = 3) {
     const col = new THREE.Color(color);
+    if (this.ultra) col.multiplyScalar(1.8); // sparks glow under bloom
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, s = speed * (0.3 + Math.random() * 0.7);
       this.parts.push({ x, y, h: 8 + Math.random() * 8, vx: Math.cos(a) * s, vy: Math.sin(a) * s, vh: 60 + Math.random() * speed, life, max: life, col, size: size * 1.2 });
@@ -532,7 +370,7 @@ export class Renderer3D {
       case 'pdie': this.burst(e.x, e.y, '#ffffff', 24, 180, 0.8, 4); break;
       case 'pick': this.burst(e.x, e.y, e.k === 'health' ? '#ff6b8b' : e.k === 'ammo' ? '#ffd23f' : '#c99558', 10, 90, 0.5, 3); this.floatText(e.x, e.y, e.k === 'health' ? '+HP' : e.k === 'ammo' ? '+AMMO' : '+CRATE', '#ffffff'); break;
       case 'spawn': this.burst(e.x, e.y, '#7c4dff', 10, 60, 0.6, 3); this.rings.push({ x: e.x, y: e.y, r: 18, life: 0.4, max: 0.4, col: '#9a6bff' }); break;
-      case 'shot': this.parts.push({ x: e.x, y: e.y, h: 12, vx: 0, vy: 0, vh: 0, life: 0.06, max: 0.06, col: new THREE.Color('#fff0aa'), size: 7, still: true }); break;
+      case 'shot': this.parts.push({ x: e.x, y: e.y, h: 14, vx: 0, vy: 0, vh: 0, life: 0.06, max: 0.06, col: new THREE.Color('#fff0aa').multiplyScalar(this.ultra ? 3 : 1), size: 7, still: true }); break;
       default:
     }
   }
@@ -565,8 +403,8 @@ export class Renderer3D {
     return car;
   }
 
-  // Places a camera-facing pixel sprite with its feet at world (x, y).
-  placeSprite(cv, x, y, scale, flip = false, lift = 0, alpha = 1) {
+  // Overhead sprites: a camera-facing pixel sprite with its feet at world (x, y).
+  placeSprite(cv, x, y, scale, flip = false, lift = 0) {
     const m = this.sprites.next();
     m.material = spriteMat(cv);
     const cx = this.camera.position.x, cy = this.camera.position.y, cz = this.camera.position.z;
@@ -576,7 +414,6 @@ export class Renderer3D {
     m.position.set(x + dx * (PUSH / d), lift + dy * (PUSH / d), y + dz * (PUSH / d));
     m.rotation.set(-PITCH, 0, 0); // perpendicular to the camera's view
     m.scale.set(cv.width * scale * f * (flip ? -1 : 1), cv.height * scale * f, 1);
-    m.visible = alpha > 0;
     return m;
   }
 
@@ -586,9 +423,8 @@ export class Renderer3D {
     b.scale.set(w, 1, w * 0.62);
   }
 
-  // ---------- main draw ----------
-  draw(scene, dt) {
-    this.time += dt;
+  // ---------- cameras ----------
+  overheadCamera(scene, dt) {
     const me = scene.me;
     if (me) {
       const k = Math.min(1, dt * 7);
@@ -600,36 +436,179 @@ export class Renderer3D {
     this.cam.x = Math.max(mx, Math.min(W - mx, this.cam.x));
     this.cam.y = Math.max(my, Math.min(H - my, this.cam.y));
     let tx = this.cam.x, tz = this.cam.y;
-    if (this.shake > 0) {
-      this.shake = Math.max(0, this.shake - dt);
-      tx += (Math.random() - 0.5) * 12 * this.shake; tz += (Math.random() - 0.5) * 12 * this.shake;
-    }
+    if (this.shake > 0) { tx += (Math.random() - 0.5) * 12 * this.shake; tz += (Math.random() - 0.5) * 12 * this.shake; }
     const D = this.dist;
+    if (this.camera.fov !== FOV) { this.camera.fov = FOV; this.camera.near = 20; this.camera.far = 4000; this.camera.updateProjectionMatrix(); }
     this.camera.position.set(tx, D * Math.sin(PITCH), tz + D * Math.cos(PITCH));
     this.camera.lookAt(tx, 0, tz);
     this.camera.updateMatrixWorld();
-    this.sun.position.set(tx + SUN.x, SUN.y, tz + SUN.z);
+    this.placeSun(tx, tz, this.detailed ? SUN_LOW.clone().multiplyScalar(700) : SUN, 520);
+    return { x0: tx - D * 1.2, x1: tx + D * 1.2, y0: tz - D * 1.6, y1: tz + D * 0.8 };
+  }
+
+  // Third-person: behind the hero's shoulder, looking where they aim. The camera
+  // is pulled in so it never ends up inside a building or wall.
+  streetCamera(scene, dt) {
+    const me = scene.me;
+    const yaw = scene.camYaw || 0;
+    const fx = Math.cos(yaw), fz = Math.sin(yaw);
+    const inCar = !!me.car;
+    const back = inCar ? 96 : 74, up = inCar ? 46 : 38;
+    let px = me.x, pz = me.y;
+    if (inCar && scene.carPos) { px = scene.carPos.x; pz = scene.carPos.y; }
+    this.cam.x = px; this.cam.y = pz;
+    // march back from the hero until a building or wall would be hit
+    let dist = back;
+    for (let d = 6; d <= back; d += 4) {
+      const t = tileAt(this.map, Math.floor((px - fx * d) / TILE), Math.floor((pz - fz * d) / TILE));
+      if (t === T.BUILD || t === T.WALL) { dist = Math.max(10, d - 8); break; }
+    }
+    // a little over the right shoulder
+    const sx = -fz * 7, sz = fx * 7;
+    const wx = px - fx * dist + sx, wy = up * (0.55 + 0.45 * (dist / back)), wz = pz - fz * dist + sz;
+    const S = this.street;
+    if (!S.ready) { S.x = wx; S.y = wy; S.z = wz; S.ready = true; }
+    const k = Math.min(1, dt * 12);
+    S.x += (wx - S.x) * k; S.y += (wy - S.y) * k; S.z += (wz - S.z) * k;
+    let shx = 0, shz = 0;
+    if (this.shake > 0) { shx = (Math.random() - 0.5) * 6 * this.shake; shz = (Math.random() - 0.5) * 6 * this.shake; }
+    if (this.camera.fov !== STREET_FOV) { this.camera.fov = STREET_FOV; this.camera.near = 2; this.camera.far = 4000; this.camera.updateProjectionMatrix(); }
+    this.camera.position.set(S.x + shx, S.y, S.z + shz);
+    this.camera.lookAt(px + fx * 70 + sx * 0.5, 18, pz + fz * 70 + sz * 0.5);
+    this.camera.updateMatrixWorld();
+    this.placeSun(px + fx * 220, pz + fz * 220, SUN_LOW.clone().multiplyScalar(900), 620);
+    return { street: true, px, pz, r: 1500 };
+  }
+
+  placeSun(tx, tz, off, box) {
+    const sc = this.sun.shadow.camera;
+    if (sc.right !== box) { sc.left = -box; sc.right = box; sc.top = box; sc.bottom = -box; sc.near = 10; sc.far = 2600; sc.updateProjectionMatrix(); }
+    this.sun.position.set(tx + off.x, off.y, tz + off.z);
     this.sun.target.position.set(tx, 0, tz);
     this.sun.target.updateMatrixWorld();
+  }
 
-    // fade any building, tree-line or pillar standing between the camera and the player
+  // ---------- main draw ----------
+  draw(scene, dt) {
+    this.time += dt;
+    if (this.shake > 0) this.shake = Math.max(0, this.shake - dt);
+    const me = scene.me;
+    const street = this.cameraMode === 'street' && !!me;
+    if (street && me.car) {
+      const c = scene.cars.find((k) => k.id === me.car);
+      scene.carPos = c ? { x: c.x, y: c.y } : null;
+    }
+    const view = street ? this.streetCamera(scene, dt) : this.overheadCamera(scene, dt);
+    const vis = view.street
+      ? (o) => Math.abs(o.x - view.px) < view.r && Math.abs(o.y - view.pz) < view.r
+      : (o) => o.x > view.x0 && o.x < view.x1 && o.y > view.y0 && o.y < view.y1;
+
+    // fade buildings and pillars standing between the overhead camera and the hero
     const ms = this.mapScene;
     for (const f of ms.fadeables) {
       let target = 1;
-      if (me && !me.dead) {
+      if (!street && me && !me.dead) {
         const reach = f.height / Math.tan(PITCH) + 24;
         if (me.x > f.x0 - 14 && me.x < f.x1 + 14 && me.y < f.y0 + 6 && me.y > f.y0 - reach) target = 0.3;
       }
+      if (f.o === target && f.done) continue;
       f.o += (target - f.o) * Math.min(1, dt * 8);
       if (Math.abs(f.o - target) < 0.01) f.o = target;
+      f.done = f.o === target;
       for (const m of f.mats) { m.opacity = f.o; m.depthWrite = f.o > 0.95; }
     }
-    for (const w of ms.waters) w.opacity = (w.isMeshPhongMaterial ? 0.55 : 0.3) + 0.08 * Math.sin(this.time * 2);
+    for (const w of ms.waters) {
+      if (w.isMeshPhongMaterial) w.opacity = 0.55 + 0.08 * Math.sin(this.time * 2);
+      else if (w.isMeshBasicMaterial) w.opacity = 0.3 + 0.08 * Math.sin(this.time * 2);
+    }
+    if (ms.beacons) for (const b of ms.beacons) b.emissiveIntensity = Math.sin(this.time * 3) > 0.3 ? 5 : 0.2;
 
-    this.sprites.begin(); this.blobs.begin(); this.bullets.begin(); this.guns.begin(); this.carPool.begin(); this.ringPool.begin();
-    const view = { x0: tx - D * 1.2, x1: tx + D * 1.2, y0: tz - D * 1.6, y1: tz + D * 0.8 };
-    const vis = (o) => o.x > view.x0 && o.x < view.x1 && o.y > view.y0 && o.y < view.y1;
+    this.sprites.begin(); this.blobs.begin(); this.bullets.begin(); this.guns.begin(); this.carPool.begin(); this.ringPool.begin(); this.models.begin();
+    if (this.detailed) this.drawModels(scene, dt, vis);
+    else this.drawSprites(scene, vis);
 
+    for (const b of scene.bullets) {
+      if (!vis(b)) continue;
+      const m = this.bullets.next();
+      const [, r] = BULLET_COLORS[b.kind] || BULLET_COLORS.pistol;
+      m.material = this.bulletMats[b.kind] || this.bulletMats.pistol;
+      m.position.set(b.x, 14, b.y);
+      m.scale.setScalar(r * (street ? 0.8 : 1.1));
+      if (b.kind === 'rocket') this.parts.push({ x: b.x, y: b.y, h: 14, vx: 0, vy: 0, vh: 20, life: 0.3, max: 0.3, col: new THREE.Color('#9a9a9a'), size: 4 });
+    }
+    for (const r of this.rings) {
+      r.life -= dt;
+      const a = Math.max(0, r.life / r.max);
+      const m = this.ringPool.next();
+      m.material.color.set(r.col || '#ffc85a');
+      m.material.opacity = a;
+      m.position.set(r.x, 2, r.y);
+      m.scale.setScalar(r.r * (1.25 - a * 0.7));
+    }
+    this.rings = this.rings.filter((r) => r.life > 0);
+    this.updateParticles(dt);
+
+    if (scene.questDest) {
+      this.marker.visible = true;
+      this.marker.position.set(scene.questDest.x, 0, scene.questDest.y);
+      this.marker.children[0].material.opacity = 0.6 + 0.4 * Math.sin(this.time * 5);
+      this.marker.children[1].material.opacity = 0.14 + 0.06 * Math.sin(this.time * 3);
+    } else this.marker.visible = false;
+
+    this.sprites.end(); this.blobs.end(); this.bullets.end(); this.guns.end(); this.carPool.end(); this.ringPool.end(); this.models.end();
+    if (this.ultra && this.composer) this.composer.render(dt);
+    else this.gl.render(this.scene, this.camera);
+    this.drawOverlay(scene, dt, street);
+  }
+
+  drawModels(scene, dt, vis) {
+    const K = this.models, t = this.time;
+    for (const c of scene.cars) {
+      if (!vis(c)) continue;
+      const e = K.get('c' + c.id, 'car' + c.color, () => buildCar(c.color));
+      e.obj.position.set(c.x, 0, c.y);
+      e.obj.rotation.y = -c.ang;
+    }
+    for (const n of scene.npcs) {
+      if (!vis(n)) continue;
+      const e = K.get('n' + n.id, 'ch' + JSON.stringify(n.look), () => buildCharacter(n.look));
+      e.obj.position.set(n.x, 0, n.y);
+      e.obj.rotation.y = -(n.ang ?? Math.PI / 2);
+      poseCharacter(e.obj, { phase: 0, moving: false, wpn: 'pistol', hurt: 0, t: t + n.id, armed: false });
+    }
+    for (const k of scene.pickups) {
+      if (!vis(k)) continue;
+      const e = K.get('k' + k.id, 'pk' + k.kind, () => buildPickup(k.kind));
+      e.obj.position.set(k.x, 0, k.y);
+      posePickup(e.obj, { t, id: k.id });
+    }
+    for (const en of scene.enemies) {
+      if (!vis(en)) continue;
+      const e = K.get('e' + en.id, `en${en.type}${en.boss ? 1 : 0}`, () => buildEnemy(en.type, en.boss));
+      const moving = K.step(e, en.x, en.y, dt);
+      e.obj.position.set(en.x, 0, en.y);
+      e.obj.rotation.y = -en.ang;
+      poseEnemy(e.obj, { phase: e.phase, moving, t: t + en.id });
+    }
+    for (const p of scene.players) {
+      if (p.dead) continue;
+      if (p.pet && !p.car && vis(p.pet)) { // the companion rides along (hidden) while you drive
+        const e = K.get('pet' + p.id, `cr${p.petType}${p.evolved ? 1 : 0}`, () => buildCreature(p.petType, p.evolved));
+        const moving = K.step(e, p.pet.x, p.pet.y, dt);
+        e.obj.position.set(p.pet.x, 0, p.pet.y);
+        e.obj.rotation.y = -p.ang;
+        poseCreature(e.obj, { phase: e.phase, moving, t: t + p.id });
+      }
+      if (p.car || !vis(p)) continue;
+      const e = K.get('p' + p.id, 'ch' + JSON.stringify(p.look), () => buildCharacter(p.look));
+      const moving = K.step(e, p.x, p.y, dt) || p.moving;
+      e.obj.position.set(p.x, 0, p.y);
+      e.obj.rotation.y = -p.ang;
+      poseCharacter(e.obj, { phase: e.phase, moving, wpn: p.wpn, hurt: p.hurtFlash || 0, t: t + p.id });
+    }
+  }
+
+  drawSprites(scene, vis) {
     for (const c of scene.cars) {
       if (!vis(c)) continue;
       const car = this.carPool.next();
@@ -658,7 +637,7 @@ export class Renderer3D {
     }
     for (const p of scene.players) {
       if (p.dead) continue;
-      if (p.pet && !p.car && vis(p.pet)) { // the companion rides along (hidden) while you drive
+      if (p.pet && !p.car && vis(p.pet)) {
         const cv = petSprite(p.petType, p.evolved, Math.floor(this.time * 3) % 2);
         this.placeSprite(cv, p.pet.x, p.pet.y + cv.height * 0.4, 1.4, Math.cos(p.ang) < 0);
         this.blob(p.pet.x, p.pet.y + cv.height * 0.35, cv.width);
@@ -680,28 +659,10 @@ export class Renderer3D {
       gun.scale.multiplyScalar((dd - push) / dd);
       gun.rotation.set(0, -p.ang, 0);
     }
-    for (const b of scene.bullets) {
-      if (!vis(b)) continue;
-      const m = this.bullets.next();
-      const [, r] = BULLET_COLORS[b.kind] || BULLET_COLORS.pistol;
-      m.material = this.bulletMats[b.kind] || this.bulletMats.pistol;
-      m.position.set(b.x, 12, b.y);
-      m.scale.setScalar(r * 1.1);
-      if (b.kind === 'rocket') this.parts.push({ x: b.x, y: b.y, h: 12, vx: 0, vy: 0, vh: 20, life: 0.3, max: 0.3, col: new THREE.Color('#9a9a9a'), size: 4 });
-    }
-    // explosion / spawn rings
-    for (const r of this.rings) {
-      r.life -= dt;
-      const a = Math.max(0, r.life / r.max);
-      const m = this.ringPool.next();
-      m.material.color.set(r.col || '#ffc85a');
-      m.material.opacity = a;
-      m.position.set(r.x, 2, r.y);
-      m.scale.setScalar(r.r * (1.25 - a * 0.7));
-    }
-    this.rings = this.rings.filter((r) => r.life > 0);
-    // voxel particles
-    const pm = this.partMesh, mat = new THREE.Matrix4(), pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scl = new THREE.Vector3();
+  }
+
+  updateParticles(dt) {
+    const pm = this.partMesh, mat = new THREE.Matrix4(), pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scl = new THREE.Vector3(), eul = new THREE.Euler();
     let n = 0;
     for (const p of this.parts) {
       p.life -= dt;
@@ -713,7 +674,7 @@ export class Renderer3D {
       }
       const s = p.size * Math.max(0.2, p.life / p.max);
       pos.set(p.x, p.h, p.y); scl.set(s, s, s);
-      quat.setFromEuler(new THREE.Euler(p.life * 9, p.life * 7, 0));
+      quat.setFromEuler(eul.set(p.life * 9, p.life * 7, 0));
       mat.compose(pos, quat, scl);
       pm.setMatrixAt(n, mat); pm.setColorAt(n, p.col);
       n++;
@@ -722,22 +683,10 @@ export class Renderer3D {
     pm.count = n;
     pm.instanceMatrix.needsUpdate = true;
     if (pm.instanceColor) pm.instanceColor.needsUpdate = true;
-
-    // quest destination marker
-    if (scene.questDest) {
-      this.marker.visible = true;
-      this.marker.position.set(scene.questDest.x, 0, scene.questDest.y);
-      this.marker.children[0].material.opacity = 0.6 + 0.4 * Math.sin(this.time * 5);
-      this.marker.children[1].material.opacity = 0.14 + 0.06 * Math.sin(this.time * 3);
-    } else this.marker.visible = false;
-
-    this.sprites.end(); this.blobs.end(); this.bullets.end(); this.guns.end(); this.carPool.end(); this.ringPool.end();
-    this.gl.render(this.scene, this.camera);
-    this.drawOverlay(scene, dt);
   }
 
   // ---------- 2D overlay: names, health bars, damage numbers, radar ----------
-  drawOverlay(scene, dt) {
+  drawOverlay(scene, dt, street) {
     const g = this.g;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, this.cv.width, this.cv.height);
@@ -745,8 +694,11 @@ export class Renderer3D {
     g.imageSmoothingEnabled = false;
     const me = scene.me;
     const Wc = this.cv.width / this.dpr, Hc = this.cv.height / this.dpr;
+    // street level: only label things nearby, so names don't show through the far city
+    const near = (o) => !street || !me || Math.hypot(o.x - me.x, o.y - me.y) < 520;
     const onScreen = (s) => !s.behind && s.x > -40 && s.x < Wc + 40 && s.y > -40 && s.y < Hc + 40;
     for (const n of scene.npcs) {
+      if (!near(n)) continue;
       const s = this.project(n.x, n.y, 52);
       if (!onScreen(s)) continue;
       const bob = Math.sin(this.time * 3) * 2;
@@ -756,28 +708,24 @@ export class Renderer3D {
       this.label(n.name, s.x, s.y - 18, '#ffe9a0');
     }
     for (const e of scene.enemies) {
-      if (e.hpPct >= 100) continue;
+      if (e.hpPct >= 100 || !near(e)) continue;
       const s = this.project(e.x, e.y, e.boss ? 62 : 36);
       if (onScreen(s)) this.bar(s.x, s.y, e.boss ? 46 : 26, e.hpPct / 100, e.boss ? '#ffd23f' : '#ff5d6c');
     }
     for (const p of scene.players) {
-      if (p.dead || p.car) continue;
+      if (p.dead || p.car || !near(p)) continue;
       const isMe = p === me;
-      if (isMe && !scene.multi) continue;
+      if (isMe && (!scene.multi || street)) continue;
       const s = this.project(p.x, p.y, 46);
       if (!onScreen(s)) continue;
       this.label(`${p.name}${scene.pvp ? '' : ' Lv' + p.level}`, s.x, s.y - 8, isMe ? '#9fe8ff' : '#ffffff');
       if (!isMe) this.bar(s.x, s.y, 30, p.hp / p.maxHp, '#5be37a');
     }
-    for (const c of scene.cars) {
-      if (!c.driver || !c.driverName) continue;
-      const s = this.project(c.x, c.y, 30);
-      if (onScreen(s)) this.label(c.driverName, s.x, s.y, '#ffffff');
-    }
     g.textAlign = 'center';
     for (const t of this.texts) {
       t.life -= dt;
       const a = Math.max(0, t.life / t.max);
+      if (!near(t)) continue;
       const s = this.project(t.x, t.y, 30 + (1 - a) * 26);
       if (s.behind) continue;
       g.globalAlpha = Math.min(1, a * 2);
@@ -787,12 +735,25 @@ export class Renderer3D {
       g.globalAlpha = 1;
     }
     this.texts = this.texts.filter((t) => t.life > 0);
-    if (scene.questTarget && me) this.drawArrow(scene.questTarget, me);
-    if (scene.showMini && me) this.drawMini(scene, me);
+    if (street && me && !me.car && !me.dead) this.crosshair(me);
+    if (scene.questTarget && me) this.drawArrow(scene.questTarget, me, street ? scene.camYaw || 0 : null);
+    if (scene.showMini && me) this.drawMini(scene, me, street ? scene.camYaw || 0 : null);
     if (me && me.hurtFlash > 0) {
       g.fillStyle = `rgba(255,40,60,${me.hurtFlash * 0.35})`;
       g.fillRect(0, 0, Wc, Hc);
     }
+  }
+
+  // Street level: a small reticle where shots go (chest height, ahead of the hero).
+  crosshair(me) {
+    const s = this.project(me.x + Math.cos(me.ang) * 140, me.y + Math.sin(me.ang) * 140, 14);
+    if (s.behind) return;
+    const g = this.g;
+    g.strokeStyle = 'rgba(29,26,43,0.9)'; g.lineWidth = 4;
+    g.beginPath(); g.arc(s.x, s.y, 8, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = '#ffffff'; g.lineWidth = 2;
+    g.beginPath(); g.arc(s.x, s.y, 8, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = '#ffd23f'; g.fillRect(s.x - 1.5, s.y - 1.5, 3, 3);
   }
 
   label(text, x, y, color) {
@@ -812,13 +773,15 @@ export class Renderer3D {
   }
 
   // Edge arrow toward an off-screen objective. Direction comes from the world-space
-  // delta (projected points behind the camera would flip).
-  drawArrow(t, me) {
+  // delta (projected points behind the camera would flip). With a street camera
+  // (yaw given), "up" on screen is the way the camera faces.
+  drawArrow(t, me, yaw) {
     const g = this.g;
     const s = this.project(t.x, t.y, 0);
     const W = this.cv.width / this.dpr, H = this.cv.height / this.dpr;
     if (!s.behind && s.x > 30 && s.x < W - 30 && s.y > 30 && s.y < H - 30) return;
-    const a = Math.atan2((t.y - me.y) / this.aimYScale, t.x - me.x);
+    const world = Math.atan2(t.y - me.y, t.x - me.x);
+    const a = yaw === null ? Math.atan2((t.y - me.y) / this.aimYScale, t.x - me.x) : wrap(world - yaw) - Math.PI / 2;
     const m = 46;
     const k = Math.min(Math.abs((W / 2 - m) / (Math.cos(a) || 1e-6)), Math.abs((H / 2 - m) / (Math.sin(a) || 1e-6)));
     const x = W / 2 + Math.cos(a) * k, y = H / 2 + Math.sin(a) * k;
@@ -831,7 +794,7 @@ export class Renderer3D {
     g.restore();
   }
 
-  drawMini(scene, me) {
+  drawMini(scene, me, yaw) {
     const g = this.g;
     const size = 92;
     const W = this.cv.width / this.dpr;
@@ -845,5 +808,10 @@ export class Renderer3D {
     for (const p of scene.pickups) if (p.kind === 'crate') dot(p.x, p.y, '#c99558', 4);
     if (scene.questTarget) dot(scene.questTarget.x, scene.questTarget.y, Math.floor(this.time * 4) % 2 ? '#ffd23f' : '#ffffff', 5);
     dot(me.x, me.y, '#5bd8ff', 4);
+    if (yaw !== null) { // facing line
+      const mx = x0 + (me.x / TILE) * k, my = y0 + (me.y / TILE) * k;
+      g.strokeStyle = '#5bd8ff'; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(mx, my); g.lineTo(mx + Math.cos(yaw) * 9, my + Math.sin(yaw) * 9); g.stroke();
+    }
   }
 }

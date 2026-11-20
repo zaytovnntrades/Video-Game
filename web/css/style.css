@@ -206,3 +206,11 @@ body.dual #toasts { left: calc(var(--gw) / 2); top: calc(var(--gh) * 0.1 + var(-
 body.dual #dialog { left: calc(var(--gw) / 2); width: min(560px, calc(var(--gw) - 20px)); }
 body.dual-v #dialog { bottom: calc(100% - var(--gh) + 10px); }
 body.dual #dead { inset: auto; left: 0; top: 0; width: var(--gw); height: var(--gh); }
+
+/* ---------- street-level (third-person) controls ---------- */
+.hud-br .fire, .pbtn.fire { display: none; }
+body.cam-street .hud-br .fire { display: flex; align-items: center; justify-content: center; right: 0; bottom: 0; width: 84px; height: 84px; font-size: 11px; background: #ff5d6c; color: #fff; text-shadow: 1px 1px 0 var(--ink); }
+body.cam-street .hud-br .act { right: 96px; bottom: 6px; width: 60px; height: 60px; }
+body.cam-street .hud-br .wpn { right: 0; bottom: 98px; }
+body.cam-street .pbtn.fire { display: flex; align-items: center; justify-content: center; width: 58px; height: 58px; border-radius: 50%; background: #ff5d6c; color: #fff; font-size: 8px; text-shadow: 1px 1px 0 var(--ink); }
+body.gfx-ultra #vignette { display: none; } /* Ultra grades and vignettes in its own post-processing */

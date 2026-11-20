@@ -7,7 +7,7 @@ export function defaultProfile() {
   return {
     v: 1, created: false, name: '', look: { skin: 1, hair: 1, style: 1, hat: 2, shirt: 2, pants: 0 }, companion: 'cindkit',
     level: 1, xp: 0, coins: 0, points: 0, stats: { pow: 0, vit: 0, agi: 0 }, weapons: ['pistol'], questNum: 0,
-    best: { wave: 0, pvpWins: 0 }, settings: { sound: true, server: '', gfx: 'high', layout: 'auto' },
+    best: { wave: 0, pvpWins: 0 }, settings: { sound: true, server: '', gfx: 'ultra', camera: 'street', layout: 'auto', rev: 2 },
   };
 }
 
@@ -28,6 +28,8 @@ export function loadProfile() {
     p.stats = { ...defaultProfile().stats, ...(s.stats || {}) };
     for (const k of STAT_KEYS) p.stats[k] = Math.max(0, Math.min(STAT_MAX, p.stats[k] | 0));
     p.settings = { ...defaultProfile().settings, ...(s.settings || {}) };
+    // saves from before the street-level update move to the new look once
+    if (!(p.settings.rev >= 2)) { p.settings.gfx = 'ultra'; p.settings.camera = 'street'; p.settings.rev = 2; }
     p.best = { ...defaultProfile().best, ...(s.best || {}) };
     if (!CREATURES[p.companion]) p.companion = 'cindkit';
     if (!Array.isArray(p.weapons) || !p.weapons.includes('pistol')) p.weapons = ['pistol'];

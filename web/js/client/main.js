@@ -127,18 +127,20 @@ setSound(app.profile.settings.sound);
 
 const cv = $('game');
 const sticks = $('sticks');
-const GFX = { high: '3D High (shadows, depth blur)', fast: '3D Fast', classic: 'Classic 2D' };
+const GFX = { ultra: 'Ultra (bloom, sky, 3D models)', high: '3D High', fast: '3D Fast', classic: 'Classic 2D' };
+const CAMS = { street: 'Street level (behind the shoulder)', overhead: 'Overhead' };
 const renderers = {};
 // Picks the renderer for a graphics setting. 3D needs WebGL2; without it we fall back to 2D.
 function useGfx(mode) {
-  if (!GFX[mode]) mode = 'high';
+  if (!GFX[mode]) mode = 'ultra';
   let r = null;
   if (mode !== 'classic') {
     try {
       // one WebGL renderer for the whole app; High/Fast just change its quality
-      if (!renderers.gl) renderers.gl = new Renderer3D($('game3d'), cv, { quality: mode });
+      if (!renderers.gl) renderers.gl = new Renderer3D($('game3d'), cv, { quality: mode, camera: camMode() });
       r = renderers.gl;
       r.setQuality(mode);
+      r.setCamera(camMode());
     } catch (e) {
       console.warn('3D graphics unavailable, using Classic 2D', e);
       mode = 'classic';
@@ -147,14 +149,25 @@ function useGfx(mode) {
   if (!r) r = renderers.classic || (renderers.classic = new Renderer(cv));
   document.body.classList.toggle('gfx-3d', mode !== 'classic');
   document.body.classList.toggle('gfx-high', mode === 'high');
+  document.body.classList.toggle('gfx-ultra', mode === 'ultra');
   app.renderer = r;
   app.gfx = mode;
+  // Street level needs the 3D renderer; Classic 2D always plays from overhead.
+  const street = r.kind === '3d' && camMode() === 'street';
+  app.input.mode = street ? 'street' : 'overhead';
+  document.body.classList.toggle('cam-street', street);
+  $('help').innerHTML = street ? 'Left thumb: move &nbsp; Right thumb: look &nbsp; FIRE: shoot' : 'Left thumb: move &nbsp; Right thumb: aim + shoot';
+  $('zone-aim').textContent = street ? 'LOOK' : 'AIM';
   r.resize(app.viewRect);
   r.setMap(backdrop);
   return mode;
 }
+
 app.input = new Input($('touch'));
 app.input.onPause = () => togglePause();
+app.input.bindFire($('b-fire'));
+app.input.bindFire($('pb-fire'));
+function camMode() { return CAMS[app.profile.settings.camera] ? app.profile.settings.camera : 'street'; }
 
 // Menu backdrop: the city, slowly panning.
 const backdrop = makeCity(20260);
@@ -205,7 +218,14 @@ function drawRadar(scene) {
   for (const p of scene.pickups) if (p.kind === 'crate') dot(p.x, p.y, '#c99558', 5);
   for (const p of scene.players) if (p !== scene.me && !p.dead) dot(p.x, p.y, '#ffffff', 5);
   if (scene.questTarget) dot(scene.questTarget.x, scene.questTarget.y, Math.floor(t * 4) % 2 ? '#ffd23f' : '#ffffff', 6);
-  if (scene.me) dot(scene.me.x, scene.me.y, '#5bd8ff', 6);
+  if (scene.me) {
+    dot(scene.me.x, scene.me.y, '#5bd8ff', 6);
+    if (app.input.mode === 'street') { // facing line
+      const mx = ox + (scene.me.x / 32) * k, my = oy + (scene.me.y / 32) * k, yaw = app.input.yaw;
+      g.strokeStyle = '#5bd8ff'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(mx, my); g.lineTo(mx + Math.cos(yaw) * 12, my + Math.sin(yaw) * 12); g.stroke();
+    }
+  }
 }
 
 function resize() {
@@ -369,7 +389,16 @@ function renderSettings() {
   const lay = LAYOUTS[app.profile.settings.layout] ? app.profile.settings.layout : 'auto';
   $('st-layout').innerHTML = `<span>Layout<span class="d">Two screens: game on top, touch panel below</span></span><span>${LAYOUTS[lay]}</span>`;
   $('st-gfx').innerHTML = `<span>Graphics<span class="d">${fell ? '3D is not supported on this device' : 'Lower it if the game feels slow'}</span></span><span>${GFX[app.gfx]}</span>`;
+  const cam = app.gfx === 'classic' ? 'overhead' : camMode();
+  $('st-cam').innerHTML = `<span>Camera<span class="d">${app.gfx === 'classic' ? 'Classic 2D plays from overhead' : 'Street level: drag the right side to look'}</span></span><span>${CAMS[cam]}</span>`;
 }
+tap($('st-cam'), () => {
+  if (app.gfx === 'classic') return;
+  app.profile.settings.camera = camMode() === 'street' ? 'overhead' : 'street';
+  useGfx(app.gfx);
+  app.save(true);
+  renderSettings();
+});
 tap($('st-layout'), () => {
   const order = ['auto', 'dual', 'full'];
   const cur = LAYOUTS[app.profile.settings.layout] ? app.profile.settings.layout : 'auto';
@@ -378,7 +407,7 @@ tap($('st-layout'), () => {
   renderSettings();
 });
 tap($('st-gfx'), () => {
-  const order = ['high', 'fast', 'classic'];
+  const order = ['ultra', 'high', 'fast', 'classic'];
   const next = order[(order.indexOf(app.gfx) + 1) % order.length];
   app.profile.settings.gfx = next;
   useGfx(next);

@@ -4,6 +4,7 @@ import { World } from '../shared/sim.js';
 import { makeArena } from '../shared/maps.js';
 import { WEAPON_ORDER, ENEMY_ORDER, BULLET_KINDS, CREATURES, EVOLVE_LEVEL, grantXp } from '../shared/data.js';
 import { toLoadout } from './save.js';
+import { wrapAngle } from './input.js';
 import { sfx } from './audio.js';
 
 const STEP = 1 / 60;
@@ -102,6 +103,24 @@ class Session {
   }
 
   onLevel() {}
+
+  // Street (third-person) camera helpers. While driving, the camera swings behind
+  // the car; on foot, a light aim assist pulls the shot toward an enemy near the
+  // crosshair, since aiming by dragging a thumb is coarse on a phone.
+  streetAim(inp, me, carAng, targets, dt) {
+    if (this.input.mode !== 'street' || !me) return inp;
+    if (carAng !== null) { this.input.followYaw(carAng, dt); return inp; }
+    let best = null, bestD = 0.22;
+    for (const t of targets) {
+      if (t === me || t.dead) continue;
+      const dx = t.x - me.x, dy = t.y - me.y, d = Math.hypot(dx, dy);
+      if (d > 460 || d < 1) continue;
+      const off = Math.abs(wrapAngle(Math.atan2(dy, dx) - inp.ang));
+      if (off < bestD) { bestD = off; best = Math.atan2(dy, dx); }
+    }
+    if (best !== null) inp.ang = wrapAngle(inp.ang + wrapAngle(best - inp.ang) * 0.85);
+    return inp;
+  }
 }
 
 export class LocalGame extends Session {
@@ -125,7 +144,8 @@ export class LocalGame extends Session {
     const ammo = WEAPON_ORDER.map((w) => (!me.weapons.includes(w) ? -2 : me.ammo[w] === Infinity ? -1 : me.ammo[w]));
     this.curWpn = me.wpn;
     this.resolveWeapon(me.weapons, ammo);
-    const inp = this.input.read(this.r, me);
+    const car = me.car ? this.world.cars.find((c) => c.id === me.car) : null;
+    const inp = this.streetAim(this.input.read(this.r, me), me, car ? car.ang : null, this.world.enemies, dt);
     Object.assign(me.input, inp, { act: this.input.act, wpn: this.wantWpn });
     this.acc = Math.min(this.acc + dt, 0.25);
     while (this.acc >= STEP) {
@@ -150,7 +170,7 @@ export class LocalGame extends Session {
     me.hurtFlash = this.hurtFlash;
     const q = w.quest;
     return {
-      me, players: w.players, multi: false, pvp: false, showMini: true, miniTop: 44,
+      me, players: w.players, multi: false, pvp: false, showMini: true, miniTop: 44, camYaw: this.input.yaw,
       enemies: w.enemies.map((e) => ({ id: e.id, type: e.type, x: e.x, y: e.y, ang: e.ang, boss: e.boss, hpPct: Math.max(1, Math.round((e.hp / e.maxHp) * 100)) })),
       bullets: w.bullets, pickups: w.pickups,
       cars: w.cars.map((c) => ({ ...c, driverName: '' })),
@@ -292,7 +312,8 @@ export class NetGame extends Session {
     const owned = this.priv ? WEAPON_ORDER.filter((w, i) => this.priv.ammo[i] !== -2) : ['pistol'];
     this.curWpn = this.priv ? this.priv.wpn : 'pistol';
     this.resolveWeapon(owned, this.priv ? this.priv.ammo : [-1]);
-    const inp = this.input.read(this.r, me);
+    const targets = this.mode === 'pvp' ? this.view.players : this.view.enemies;
+    const inp = this.streetAim(this.input.read(this.r, me), me, null, targets, dt);
     this.myAng = inp.ang;
     const now = performance.now();
     if (now - this.lastSend > 50) {
@@ -306,7 +327,7 @@ export class NetGame extends Session {
     if (!v) return { me: null, players: [], enemies: [], bullets: [], pickups: [], cars: [], npcs: [] };
     const me = v.players.find((p) => p.id === this.meId) || null;
     if (me) { me.ang = this.myAng ?? me.ang; me.hurtFlash = this.hurtFlash; if (this.priv) me.wpn = this.priv.wpn; }
-    return { me, players: v.players, enemies: v.enemies, bullets: v.bullets, pickups: v.pickups, cars: [], npcs: [], multi: true, pvp: this.mode === 'pvp', showMini: false };
+    return { me, players: v.players, enemies: v.enemies, bullets: v.bullets, pickups: v.pickups, cars: [], npcs: [], multi: true, pvp: this.mode === 'pvp', showMini: false, camYaw: this.input.yaw };
   }
 
   hudState() {

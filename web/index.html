@@ -38,6 +38,7 @@
     <div class="hud-br">
       <button class="hud-btn wpn" id="b-wpn"><span id="h-wpn">Pistol</span><small id="h-ammo">&infin;</small></button>
       <button class="hud-btn act" id="b-act">A<small id="h-hint"></small></button>
+      <button class="hud-btn fire" id="b-fire">FIRE</button>
     </div>
     <div id="toasts"></div>
     <div id="banner" class="hidden"><b id="ban-t"></b><span id="ban-s"></span></div>
@@ -57,11 +58,12 @@
       <div class="p-mid">
         <div class="zone"><span>MOVE</span></div>
         <canvas id="p-radar" width="150" height="150"></canvas>
-        <div class="zone"><span>AIM</span></div>
+        <div class="zone"><span id="zone-aim">AIM</span></div>
       </div>
       <div class="p-bottom">
         <div class="slots" id="p-slots"></div>
         <button class="pbtn" id="pb-pause" aria-label="Pause">II</button>
+        <button class="pbtn fire" id="pb-fire">FIRE</button>
         <button class="pbtn act" id="pb-act">A<small id="p-hint"></small></button>
       </div>
     </div>
@@ -139,6 +141,7 @@
       <div class="list">
         <button class="item" id="st-sound"></button>
         <button class="item" id="st-gfx"></button>
+        <button class="item" id="st-cam"></button>
         <button class="item" id="st-layout"></button>
         <button class="item danger" id="st-reset">Delete save &amp; start over</button>
       </div>

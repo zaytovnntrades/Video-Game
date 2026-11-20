@@ -247,7 +247,9 @@ export class World {
 
   updatePet(p, dt) {
     const pet = p.pet;
-    const tx = p.x - Math.cos(p.ang) * 24, ty = p.y - Math.sin(p.ang) * 24 + 4;
+    // follow at the hero's back-left: out of the line of fire and out of a
+    // behind-the-shoulder camera's view
+    const tx = p.x + Math.cos(p.ang - 2.2) * 26, ty = p.y + Math.sin(p.ang - 2.2) * 26 + 4;
     if (Math.hypot(tx - pet.x, ty - pet.y) > 220) { pet.x = tx; pet.y = ty; }
     const k = Math.min(1, dt * 6);
     pet.x += (tx - pet.x) * k; pet.y += (ty - pet.y) * k;
