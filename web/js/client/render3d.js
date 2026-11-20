@@ -463,8 +463,8 @@ export class Renderer3D {
       const t = tileAt(this.map, Math.floor((px - fx * d) / TILE), Math.floor((pz - fz * d) / TILE));
       if (t === T.BUILD || t === T.WALL) { dist = Math.max(10, d - 8); break; }
     }
-    // a little over the right shoulder
-    const sx = -fz * 7, sz = fx * 7;
+    // over the right shoulder, so the hero sits left of the crosshair
+    const sx = -fz * 13, sz = fx * 13;
     const wx = px - fx * dist + sx, wy = up * (0.55 + 0.45 * (dist / back)), wz = pz - fz * dist + sz;
     const S = this.street;
     if (!S.ready) { S.x = wx; S.y = wy; S.z = wz; S.ready = true; }
@@ -474,7 +474,7 @@ export class Renderer3D {
     if (this.shake > 0) { shx = (Math.random() - 0.5) * 6 * this.shake; shz = (Math.random() - 0.5) * 6 * this.shake; }
     if (this.camera.fov !== STREET_FOV) { this.camera.fov = STREET_FOV; this.camera.near = 2; this.camera.far = 4000; this.camera.updateProjectionMatrix(); }
     this.camera.position.set(S.x + shx, S.y, S.z + shz);
-    this.camera.lookAt(px + fx * 70 + sx * 0.5, 18, pz + fz * 70 + sz * 0.5);
+    this.camera.lookAt(px + fx * 90 + sx * 0.6, 26, pz + fz * 90 + sz * 0.6);
     this.camera.updateMatrixWorld();
     this.placeSun(px + fx * 220, pz + fz * 220, SUN_LOW.clone().multiplyScalar(900), 620);
     return { street: true, px, pz, r: 1500 };
@@ -746,7 +746,7 @@ export class Renderer3D {
 
   // Street level: a small reticle where shots go (chest height, ahead of the hero).
   crosshair(me) {
-    const s = this.project(me.x + Math.cos(me.ang) * 140, me.y + Math.sin(me.ang) * 140, 14);
+    const s = this.project(me.x + Math.cos(me.ang) * 280, me.y + Math.sin(me.ang) * 280, 14);
     if (s.behind) return;
     const g = this.g;
     g.strokeStyle = 'rgba(29,26,43,0.9)'; g.lineWidth = 4;

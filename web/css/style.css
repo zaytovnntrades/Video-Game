@@ -214,3 +214,9 @@ body.cam-street .hud-br .act { right: 96px; bottom: 6px; width: 60px; height: 60
 body.cam-street .hud-br .wpn { right: 0; bottom: 98px; }
 body.cam-street .pbtn.fire { display: flex; align-items: center; justify-content: center; width: 58px; height: 58px; border-radius: 50%; background: #ff5d6c; color: #fff; font-size: 8px; text-shadow: 1px 1px 0 var(--ink); }
 body.gfx-ultra #vignette { display: none; } /* Ultra grades and vignettes in its own post-processing */
+
+/* upright two-screen + street level: the right thumb ring is the FIRE pad */
+body.cam-street #zone-fire { pointer-events: auto; border-color: #ff5d6c; background: radial-gradient(circle, rgba(255,93,108,.35), rgba(255,93,108,.08)); touch-action: none; }
+body.cam-street #zone-fire span { opacity: 1; color: #fff; text-align: center; text-shadow: 1px 1px 0 var(--ink); }
+body.cam-street #zone-fire small { font-size: 6px; opacity: .8; }
+body.cam-street.dual-v .pbtn.fire { display: none; }

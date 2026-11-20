@@ -157,7 +157,7 @@ function useGfx(mode) {
   app.input.mode = street ? 'street' : 'overhead';
   document.body.classList.toggle('cam-street', street);
   $('help').innerHTML = street ? 'Left thumb: move &nbsp; Right thumb: look &nbsp; FIRE: shoot' : 'Left thumb: move &nbsp; Right thumb: aim + shoot';
-  $('zone-aim').textContent = street ? 'LOOK' : 'AIM';
+  $('zone-aim').innerHTML = street ? 'FIRE<br><small>drag to aim</small>' : 'AIM';
   r.resize(app.viewRect);
   r.setMap(backdrop);
   return mode;
@@ -167,6 +167,7 @@ app.input = new Input($('touch'));
 app.input.onPause = () => togglePause();
 app.input.bindFire($('b-fire'));
 app.input.bindFire($('pb-fire'));
+app.input.bindFire($('zone-fire')); // lower screen's right ring: hold to fire, drag to aim (street level)
 function camMode() { return CAMS[app.profile.settings.camera] ? app.profile.settings.camera : 'street'; }
 
 // Menu backdrop: the city, slowly panning.
