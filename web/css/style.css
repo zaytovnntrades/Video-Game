@@ -200,8 +200,10 @@ body.dual-h .hinge { display: none; }
 .pbtn:active, .slots button:active { transform: translateY(2px); }
 body.dual-h .p-mid { flex-direction: column; }
 body.dual-h .zone { display: none; }
-body.dual-h #p-radar { width: min(150px, 40vh); height: min(150px, 40vh); }
-body.dual-h .slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+body.dual-h #p-radar { width: min(150px, 30vh); height: min(150px, 30vh); }
+body.dual-h .p-bottom { flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; }
+body.dual-h .slots { flex: 1 1 100%; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; }
+body.dual-h .slots button { font-size: 5px; min-height: 34px; padding: 4px 1px; }
 /* keep pop-ups inside the top (game) screen */
 body.dual #banner { left: calc(var(--gw) / 2); top: calc(var(--gh) * 0.2); }
 body.dual #banner b { font-size: 18px; }
@@ -223,3 +225,5 @@ body.cam-street #zone-fire { pointer-events: auto; border-color: #ff5d6c; backgr
 body.cam-street #zone-fire span { opacity: 1; color: #fff; text-align: center; text-shadow: 1px 1px 0 var(--ink); }
 body.cam-street #zone-fire small { font-size: 6px; opacity: .8; }
 body.cam-street.dual-v .pbtn.fire { display: none; }
+
+body.cam-street #tilt { display: none; } /* miniature blur is for the overhead view only */

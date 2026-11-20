@@ -124,6 +124,8 @@ export class Input {
 
   reset() {
     this.move = null; this.aim = null; this.look = null; this.fireHeld.clear(); this.keys.clear(); this.mouse.down = false;
+    // give the mouse back (pause menu, dialogs, leaving a game)
+    if (document.pointerLockElement && document.exitPointerLock) { try { document.exitPointerLock(); } catch { /* ignore */ } }
   }
 
   stickVec(s) {

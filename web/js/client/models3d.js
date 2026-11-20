@@ -151,7 +151,7 @@ export function poseCharacter(o, { phase, moving, wpn, hurt, t, armed = true }) 
     u.arms[1].rotation.set(0, 0, moving ? swing * 0.8 : -0.05 * Math.sin(t * 2));
     u.gun.visible = false;
   }
-  const e = hurt > 0 ? Math.min(1, hurt * 3) : 0;
+  const e = hurt > 0 ? Math.min(0.5, hurt * 1.5) : 0;
   for (const m of u.mats) { m.emissive.setRGB(e, 0.05 * e, 0.1 * e); }
 }
 

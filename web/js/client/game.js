@@ -312,7 +312,8 @@ export class NetGame extends Session {
     const owned = this.priv ? WEAPON_ORDER.filter((w, i) => this.priv.ammo[i] !== -2) : ['pistol'];
     this.curWpn = this.priv ? this.priv.wpn : 'pistol';
     this.resolveWeapon(owned, this.priv ? this.priv.ammo : [-1]);
-    const targets = this.mode === 'pvp' ? this.view.players : this.view.enemies;
+    // no aim assist in PvP: everyone aims by hand so matches stay fair
+    const targets = this.mode === 'pvp' ? [] : this.view.enemies;
     const inp = this.streetAim(this.input.read(this.r, me), me, null, targets, dt);
     this.myAng = inp.ang;
     const now = performance.now();

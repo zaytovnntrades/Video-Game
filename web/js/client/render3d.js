@@ -457,14 +457,19 @@ export class Renderer3D {
     let px = me.x, pz = me.y;
     if (inCar && scene.carPos) { px = scene.carPos.x; pz = scene.carPos.y; }
     this.cam.x = px; this.cam.y = pz;
-    // march back from the hero until a building or wall would be hit
-    let dist = back;
-    for (let d = 6; d <= back; d += 4) {
-      const t = tileAt(this.map, Math.floor((px - fx * d) / TILE), Math.floor((pz - fz * d) / TILE));
-      if (t === T.BUILD || t === T.WALL) { dist = Math.max(10, d - 8); break; }
-    }
     // over the right shoulder, so the hero sits left of the crosshair
-    const sx = -fz * 13, sz = fx * 13;
+    const SH = 13, rx = -fz, rz = fx;
+    // march along the camera's real path (back + shoulder offset) until a building,
+    // wall or tree would be hit, then stop short of it
+    let dist = back;
+    for (let d = 6; d <= back; d += 3) {
+      const o = SH * (d / back) + 4; // shoulder offset grows with distance, plus a margin
+      const cx = px - fx * d + rx * o, cz = pz - fz * d + rz * o;
+      const t = tileAt(this.map, Math.floor(cx / TILE), Math.floor(cz / TILE));
+      if (t === T.BUILD || t === T.WALL || t === T.TREE) { dist = Math.max(8, d - 7); break; }
+    }
+    const shoulder = SH * Math.min(1, dist / back);
+    const sx = rx * shoulder, sz = rz * shoulder;
     const wx = px - fx * dist + sx, wy = up * (0.55 + 0.45 * (dist / back)), wz = pz - fz * dist + sz;
     const S = this.street;
     if (!S.ready) { S.x = wx; S.y = wy; S.z = wz; S.ready = true; }
@@ -478,6 +483,19 @@ export class Renderer3D {
     this.camera.updateMatrixWorld();
     this.placeSun(px + fx * 220, pz + fz * 220, SUN_LOW.clone().multiplyScalar(900), 620);
     return { street: true, px, pz, r: 1500 };
+  }
+
+  // Menu backdrop for the tall street-level city: a slow sunset flyover above the skyline.
+  flyoverCamera() {
+    const t = this.time * 0.06;
+    const W = this.map.w * TILE, H = this.map.h * TILE;
+    const cx = W / 2 + Math.cos(t) * W * 0.32, cz = H / 2 + Math.sin(t) * H * 0.32;
+    if (this.camera.fov !== STREET_FOV) { this.camera.fov = STREET_FOV; this.camera.near = 2; this.camera.far = 4000; this.camera.updateProjectionMatrix(); }
+    this.camera.position.set(cx, 330, cz);
+    this.camera.lookAt(W / 2, 60, H / 2);
+    this.camera.updateMatrixWorld();
+    this.placeSun(W / 2, H / 2, SUN_LOW.clone().multiplyScalar(900), 900);
+    return { street: true, px: W / 2, pz: H / 2, r: 4000 };
   }
 
   placeSun(tx, tz, off, box) {
@@ -498,7 +516,8 @@ export class Renderer3D {
       const c = scene.cars.find((k) => k.id === me.car);
       scene.carPos = c ? { x: c.x, y: c.y } : null;
     }
-    const view = street ? this.streetCamera(scene, dt) : this.overheadCamera(scene, dt);
+    const view = street ? this.streetCamera(scene, dt)
+      : this.cameraMode === 'street' && !me ? this.flyoverCamera() : this.overheadCamera(scene, dt);
     const vis = view.street
       ? (o) => Math.abs(o.x - view.px) < view.r && Math.abs(o.y - view.pz) < view.r
       : (o) => o.x > view.x0 && o.x < view.x1 && o.y > view.y0 && o.y < view.y1;
@@ -694,6 +713,7 @@ export class Renderer3D {
     g.imageSmoothingEnabled = false;
     const me = scene.me;
     const Wc = this.cv.width / this.dpr, Hc = this.cv.height / this.dpr;
+    if (!me) { this.texts = []; return; } // menu backdrop: no name tags
     // street level: only label things nearby, so names don't show through the far city
     const near = (o) => !street || !me || Math.hypot(o.x - me.x, o.y - me.y) < 520;
     const onScreen = (s) => !s.behind && s.x > -40 && s.x < Wc + 40 && s.y > -40 && s.y < Hc + 40;
