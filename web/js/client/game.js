@@ -369,6 +369,8 @@ const SHOW_NAMES = ['Nova', 'Rook', 'Kai', 'Juno', 'Ash', 'Remy', 'Zola', 'Pax',
 export class ShowcaseGame extends Session {
   constructor(app, seed) {
     super(app);
+    // same app, but saving is a no-op: the showcase never writes to the player's storage
+    this.app = Object.create(app, { save: { value: () => {} } });
     this.cinematic = true;
     this.seed = seed >>> 0;
     const R = mulberry32(this.seed ^ 0x5eed);

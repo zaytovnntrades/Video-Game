@@ -541,7 +541,7 @@ function endSession() {
   app.input.reset();
   $('hud').classList.add('hidden');
   app.hud.clear();
-  app.save(true);
+  if (!wasShow) app.save(true); // the showcase never writes the player's save
   resize(); // menus use the full screen
   app.renderer.setMap(backdrop);
 }
