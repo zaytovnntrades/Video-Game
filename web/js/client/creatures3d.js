@@ -6,7 +6,8 @@
 // Textured with generated colour + normal maps; four-legged creatures trot with a
 // diagonal gait. Models face +x and stand on y = 0.
 import * as THREE from '../../vendor/three.module.min.js';
-import { cvs, rng, normalMap, tex, lathe, Parts, textures, buildHuman, poseHuman, bakeSkinned } from './human3d.js';
+import { cvs, rng, normalMap, tex, lathe, Parts, textures, buildHuman, poseHuman, bakeSkinned, bakeRig } from './human3d.js';
+import { mergeGeometries } from '../../vendor/jsm/utils/BufferGeometryUtils.js';
 
 // ---------------------------------------------------------------- textures
 let CT = null;
@@ -222,10 +223,21 @@ export function buildEnemy(type, boss) {
     const h = bakeSkinned(rig, { glowMat: rig.userData.irisMat }); // one skinned mesh: cheap for big waves
     body.add(h);
     ud.human = h;
+    // glitch cubes: one merged, vertex-coloured mesh that spins around the body (one draw)
+    const cubes = [];
     for (let i = 0; i < 4; i++) {
-      const c = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 1.4), M('glitch' + (i % 2), () => glow(i % 2 ? '#2df0ff' : '#ff3ad1', 2.6)));
-      body.add(c); extra.push(c);
+      const a = (i * Math.PI) / 2, g = new THREE.BoxGeometry(1.4, 1.4, 1.4);
+      g.rotateX(i); g.translate(Math.cos(a) * 8, (i % 2 ? 3 : -2), Math.sin(a) * 8);
+      g.deleteAttribute('uv');
+      const c = new THREE.Color(i % 2 ? '#2df0ff' : '#ff3ad1').multiplyScalar(2.6), n = g.attributes.position.count, col = new Float32Array(n * 3);
+      for (let k = 0; k < n; k++) { col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b; }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      cubes.push(g);
     }
+    const swarm = new THREE.Mesh(mergeGeometries(cubes), M('swarm', () => new THREE.MeshBasicMaterial({ vertexColors: true })));
+    swarm.position.y = 16;
+    body.add(swarm);
+    ud.swarm = swarm;
   } else if (type === 'runner') { // Dasher: leathery imp
     const skin = M('imp', () => std('#b8402e', { map: T.leather[0], normalMap: T.leather[1], roughness: 0.5 }));
     const horn = M('horn', () => std('#e8d6b0', { roughness: 0.35 }));
@@ -249,9 +261,15 @@ export function buildEnemy(type, boss) {
       new Parts().add(new THREE.CapsuleGeometry(0.55, 2.6, 3, 8), skin, { p: [-0.6, -1.6, 0], r: [0, 0, 0.45] }).add(new THREE.SphereGeometry(1, 8, 6), horn, { p: [-0.3, -3.2, 0], s: [1.0, 0.4, 0.6] }).into(knee);
       legs.push({ hip, knee });
     }
-    ud.legs = legs;
     const tail = new Parts().add(new THREE.CylinderGeometry(0.18, 0.45, 7, 8), skin, { p: [-5.2, 9.2, 0], r: [0, 0, 1.0] }).add(new THREE.ConeGeometry(0.9, 1.4, 4), skin, { p: [-8.2, 11.4, 0], r: [0, 0, 1.0] });
     tail.into(body);
+    // bake the imp into one skinned mesh (body + two-part legs), glowing eyes kept separate
+    const joints = [body, legs[0].hip, legs[0].knee, legs[1].hip, legs[1].knee];
+    const { mesh, bone } = bakeRig(root, joints, { glowMat: M('impeye', () => glow('#ffee55', 3)), roughness: 0.5 });
+    root.clear();
+    root.add(mesh);
+    ud.body = bone.get(body);
+    ud.legs = legs.map((L) => ({ hip: bone.get(L.hip), knee: bone.get(L.knee) }));
   } else if (type === 'brute') { // rock golem
     const rock = M('rock' + (boss ? 1 : 0), () => std(boss ? '#8f8199' : '#8d949c', { map: T.rock[0], normalMap: T.rock[1], roughness: 0.95, flatShading: true }));
     const moss = M('moss', () => std('#5f9a45', { map: T.fur[0], roughness: 1 }));
@@ -308,5 +326,5 @@ export function poseEnemy(o, { phase, moving, t }) {
     u.body.rotation.x = moving ? Math.sin(phase * 0.5) * 0.06 : 0;
     u.body.position.y = moving ? Math.abs(Math.sin(phase * 0.5)) * 0.8 : 0;
   }
-  u.extra.forEach((c, i) => { const a = t * 2.5 + (i * Math.PI) / 2; c.position.set(Math.cos(a) * 8, 16 + Math.sin(t * 4 + i) * 5, Math.sin(a) * 8); c.rotation.set(t * 3, t * 2, 0); });
+  if (u.swarm) { u.swarm.rotation.y = t * 2.5; u.swarm.position.y = 16 + Math.sin(t * 4) * 2; }
 }

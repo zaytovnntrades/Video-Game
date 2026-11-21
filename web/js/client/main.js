@@ -3,6 +3,7 @@ import { LOOK, LOOK_KEYS, CREATURES, CREATURE_ORDER, WEAPONS, WEAPON_ORDER, STAT
 import { makeCity } from '../shared/maps.js';
 import { Renderer } from './render.js';
 import { Renderer3D } from './render3d.js';
+import { buildCharacter, buildCreature } from './models3d.js';
 import { Input } from './input.js';
 import { charSprite, petSprite } from './art.js';
 import { loadProfile, saveProfile, resetProfile, defaultProfile, canBuy, buy, spendPoint } from './save.js';
@@ -544,8 +545,18 @@ function frame(now) {
     r.cam.x = cx; r.cam.y = cy;
     r.draw({ me: null, players: [], enemies: [], bullets: [], pickups: [], cars: backdrop.cars.map((c, i) => ({ ...c, id: i })), npcs: backdrop.npcs }, dt);
     if (current === 's-creator' && draft) {
-      drawSprite($('c-prev'), charSprite(draft.look, previewDir, Math.floor(now / 160) % 3), 6);
-      drawSprite($('c-pet'), petSprite(draft.companion, false, Math.floor(now / 330) % 2), 4);
+      const prev = $('c-prev'), pet = $('c-pet');
+      if (r.kind === '3d') { // realistic 3D preview of the actual model
+        const hi = 2;
+        if (prev.width !== 120 * hi) { prev.width = 120 * hi; prev.height = 150 * hi; pet.width = 88 * hi; pet.height = 88 * hi; prev.style.imageRendering = pet.style.imageRendering = 'auto'; }
+        const lk = { ...draft.look };
+        r.renderPortrait(prev, 'human', JSON.stringify(lk), () => buildCharacter(lk), now / 1000);
+        if (pet.offsetWidth) r.renderPortrait(pet, 'pet', draft.companion, () => buildCreature(draft.companion, false), now / 1000);
+      } else {
+        if (prev.width !== 120) { prev.width = 120; prev.height = 150; pet.width = 88; pet.height = 88; prev.style.imageRendering = pet.style.imageRendering = ''; }
+        drawSprite(prev, charSprite(draft.look, previewDir, Math.floor(now / 160) % 3), 6);
+        drawSprite(pet, petSprite(draft.companion, false, Math.floor(now / 330) % 2), 4);
+      }
     }
   }
   const g = sticks.getContext('2d');

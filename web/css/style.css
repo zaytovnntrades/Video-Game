@@ -113,6 +113,8 @@ button.ghost { padding: 12px 18px; font-size: 10px; }
 .creator { display: flex; gap: 16px; width: min(720px, 100%); }
 .preview { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .preview canvas { image-rendering: pixelated; background: rgba(255,255,255,.08); border-radius: 8px; }
+#c-prev { width: 120px; height: 150px; }
+#c-pet { width: 88px; height: 88px; }
 #c-name, .screen input { font-family: var(--font); font-size: 11px; padding: 8px; border: 3px solid var(--ink); border-radius: 6px; width: 100%; max-width: 360px; background: #fbf7ea; color: var(--ink); }
 #c-name { width: 140px; text-align: center; }
 .options { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }

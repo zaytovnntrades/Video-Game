@@ -20,7 +20,7 @@ import { TILE } from '../shared/data.js';
 import { T, tileAt } from '../shared/maps.js';
 import { charSprite, petSprite, enemySprite, pickupSprite, renderMini, CAR_COLORS } from './art.js';
 import { MapScene, UltraScene } from './scenery3d.js';
-import { ModelKit, buildCharacter, poseCharacter, buildCreature, poseCreature, buildEnemy, poseEnemy, buildPickup, posePickup, buildCar } from './models3d.js';
+import { ModelKit, buildCharacter, buildNPC, poseCharacter, buildCreature, poseCreature, buildEnemy, poseEnemy, buildPickup, posePickup, buildCar } from './models3d.js';
 
 const PITCH = (54 * Math.PI) / 180; // overhead camera looks down at 54 degrees
 const FOV = 34;
@@ -596,7 +596,7 @@ export class Renderer3D {
     }
     for (const n of scene.npcs) {
       if (!vis(n)) continue;
-      const e = K.get('n' + n.id, 'ch' + JSON.stringify(n.look), () => buildCharacter(n.look));
+      const e = K.get('n' + n.id, 'npc' + JSON.stringify(n.look), () => buildNPC(n.look));
       e.obj.position.set(n.x, 0, n.y);
       e.obj.rotation.y = -(n.ang ?? Math.PI / 2);
       poseCharacter(e.obj, { phase: 0, moving: false, wpn: 'pistol', hurt: 0, t: t + n.id, armed: false });
@@ -708,6 +708,55 @@ export class Renderer3D {
     pm.count = n;
     pm.instanceMatrix.needsUpdate = true;
     if (pm.instanceColor) pm.instanceColor.needsUpdate = true;
+  }
+
+  // ---------- creator preview ----------
+  // Renders a slowly turning 3D model into a 2D canvas (the character creator).
+  // Reuses this renderer: draws into an offscreen target, then copies the pixels.
+  renderPortrait(cv2d, kind, key, build, t) {
+    if (!this.portrait) {
+      const scene = new THREE.Scene();
+      scene.add(new THREE.HemisphereLight('#dfe6ff', '#4a3a30', 1.6));
+      const k = new THREE.DirectionalLight('#fff1dc', 2.8); k.position.set(40, 60, 30); scene.add(k);
+      const rim = new THREE.DirectionalLight('#9fc0ff', 1.6); rim.position.set(-40, 30, -40); scene.add(rim);
+      this.portrait = { scene, cams: {}, slots: {}, rt: null, buf: null };
+    }
+    const P = this.portrait;
+    let slot = P.slots[kind];
+    if (!slot || slot.key !== key) {
+      if (slot) P.scene.remove(slot.obj);
+      slot = { key, obj: build() };
+      P.slots[kind] = slot;
+      P.scene.add(slot.obj);
+    }
+    for (const k in P.slots) P.slots[k].obj.visible = k === kind;
+    const w = cv2d.width, h = cv2d.height;
+    if (!P.rt || P.rt.width !== w || P.rt.height !== h) {
+      if (P.rt) P.rt.dispose();
+      P.rt = new THREE.WebGLRenderTarget(w, h, { samples: 4 });
+      P.rt.texture.colorSpace = THREE.SRGBColorSpace;
+      P.buf = new Uint8Array(w * h * 4);
+    }
+    const human = kind === 'human';
+    const cam = P.cams[kind] || (P.cams[kind] = new THREE.PerspectiveCamera(human ? 34 : 38, w / h, 1, 500));
+    cam.aspect = w / h;
+    cam.position.set(human ? 46 : 34, human ? 16 : 12, 0);
+    cam.lookAt(0, human ? 13.6 : 8, 0);
+    cam.updateProjectionMatrix();
+    slot.obj.rotation.y = Math.sin(t * 0.7) * 0.9 + (human ? 0 : -0.6);
+    if (human) poseCharacter(slot.obj, { phase: 0, moving: false, wpn: 'pistol', hurt: 0, t, armed: false });
+    else poseCreature(slot.obj, { phase: t * 3, moving: false, t });
+    const prevBg = this.gl.getClearAlpha(), prevCol = this.gl.getClearColor(new THREE.Color());
+    this.gl.setRenderTarget(P.rt);
+    this.gl.setClearColor(0x000000, 0);
+    this.gl.clear();
+    this.gl.render(P.scene, cam);
+    this.gl.readRenderTargetPixels(P.rt, 0, 0, w, h, P.buf);
+    this.gl.setRenderTarget(null);
+    this.gl.setClearColor(prevCol, prevBg);
+    const g = cv2d.getContext('2d'), img = g.createImageData(w, h);
+    for (let y = 0; y < h; y++) img.data.set(P.buf.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4); // flip rows
+    g.putImageData(img, 0, 0);
   }
 
   // ---------- 2D overlay: names, health bars, damage numbers, radar ----------

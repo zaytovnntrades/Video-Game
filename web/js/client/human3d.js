@@ -414,6 +414,23 @@ export function buildHuman(look, opts = {}) {
 export function bakeSkinned(rig, { glowMat = null } = {}) {
   const u = rig.userData;
   const joints = [u.pelvis, u.spine, u.neck, u.head, ...u.arms.flatMap((a) => [a.sh, a.el, a.wr]), ...u.legs.flatMap((l) => [l.hip, l.knee, l.ankle])];
+  const { mesh, bone, mat } = bakeRig(rig, joints, { glowMat });
+  const map = (j) => bone.get(j);
+  const out = new THREE.Group();
+  out.add(mesh);
+  out.userData = {
+    pelvis: map(u.pelvis), spine: map(u.spine), neck: map(u.neck), head: map(u.head),
+    arms: u.arms.map((a) => ({ sh: map(a.sh), el: map(a.el), wr: map(a.wr), side: a.side })),
+    legs: u.legs.map((l) => ({ hip: map(l.hip), knee: map(l.knee), ankle: map(l.ankle), side: l.side })),
+    guns: {}, mats: [mat], kind: 'human',
+  };
+  return out;
+}
+
+// Generic: merges every mesh under `rig` into one SkinnedMesh whose bones mirror
+// `joints` (each part rigidly bound to its nearest joint). Meshes using glowMat stay
+// separate (emissive) and ride on their bone. Returns { mesh, bone: Map(joint -> Bone), mat }.
+export function bakeRig(rig, joints, { glowMat = null, roughness = 0.65 } = {}) {
   rig.updateMatrixWorld(true);
   const bone = new Map();
   const bones = joints.map((j) => { const b = new THREE.Bone(); b.position.copy(j.position); b.quaternion.copy(j.quaternion); b.scale.copy(j.scale); bone.set(j, b); return b; });
@@ -426,7 +443,7 @@ export function bakeSkinned(rig, { glowMat = null } = {}) {
     while (j && !bone.has(j)) j = j.parent;
     if (!j) return;
     const m = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
-    if (glowMat && o.material === glowMat) { // keep emissive eyes as a separate mesh on the head bone
+    if (glowMat && o.material === glowMat) { // keep emissive parts (eyes) as a separate mesh on their bone
       const local = new THREE.Matrix4().multiplyMatrices(new THREE.Matrix4().copy(j.matrixWorld).invert(), o.matrixWorld);
       const g = o.geometry.clone().applyMatrix4(local);
       glow.push([bone.get(j), g]);
@@ -443,23 +460,17 @@ export function bakeSkinned(rig, { glowMat = null } = {}) {
     g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
     geos.push(g);
   });
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.65 });
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness });
   const mesh = new THREE.SkinnedMesh(mergeGeometries(geos), mat);
   mesh.castShadow = true; mesh.receiveShadow = true;
-  mesh.add(bones[0]);
+  for (const j of joints) if (!bone.get(j).parent) mesh.add(bone.get(j)); // root bones
   mesh.bind(new THREE.Skeleton(bones));
-  for (const [b, g] of glow) b.add(new THREE.Mesh(g, glowMat));
-  const map = (j) => bone.get(j);
-  const out = new THREE.Group();
-  out.add(mesh);
-  out.userData = {
-    pelvis: map(u.pelvis), spine: map(u.spine), neck: map(u.neck), head: map(u.head),
-    arms: u.arms.map((a) => ({ sh: map(a.sh), el: map(a.el), wr: map(a.wr), side: a.side })),
-    legs: u.legs.map((l) => ({ hip: map(l.hip), knee: map(l.knee), ankle: map(l.ankle), side: l.side })),
-    guns: {}, mats: [mat], kind: 'human',
-  };
-  // the arm bones are posed with quaternions relative to the spine, like the groups
-  return out;
+  if (glow.length) { // one merged emissive mesh per bone
+    const byBone = new Map();
+    for (const [b, g] of glow) { if (!byBone.has(b)) byBone.set(b, []); byBone.get(b).push(g); }
+    for (const [b, list] of byBone) b.add(new THREE.Mesh(list.length > 1 ? mergeGeometries(list) : list[0], glowMat));
+  }
+  return { mesh, bone, mat };
 }
 
 // ---------------------------------------------------------------- posing

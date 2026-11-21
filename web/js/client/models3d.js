@@ -6,7 +6,8 @@
 import * as THREE from '../../vendor/three.module.min.js';
 import { LOOK } from '../shared/data.js';
 import { CAR_COLORS } from './art.js';
-import { buildHuman, poseHuman } from './human3d.js';
+import { buildHuman, poseHuman, bakeSkinned } from './human3d.js';
+import { mergeGeometries } from '../../vendor/jsm/utils/BufferGeometryUtils.js';
 
 // ---------- shared geometry / material caches ----------
 const geoCache = new Map();
@@ -46,6 +47,8 @@ function mesh(g, m, x = 0, y = 0, z = 0) {
 
 // ---------- hero / NPC: realistic human (see human3d.js) ----------
 export function buildCharacter(look) { return buildHuman(look, { lod: 'high' }); }
+// NPCs: same body, baked into one skinned mesh (cheaper; textures become flat colours)
+export function buildNPC(look) { return bakeSkinned(buildHuman(look, { lod: 'high', armed: false })); }
 export function poseCharacter(o, state) { poseHuman(o, state); }
 
 // ---------- companions and enemies: realistic models (see creatures3d.js) ----------
@@ -98,26 +101,46 @@ function paint(color) {
   }
   return m;
 }
+// One mesh for the whole car (vertex colours, clear-coat) + one for the glowing lights.
+const carBodyMat = () => new THREE.MeshPhysicalMaterial({ vertexColors: true, metalness: 0.4, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.1 });
+const carLightMat = () => new THREE.MeshBasicMaterial({ vertexColors: true });
+let CAR_MATS = null;
+function coloured(geo, hex, k = 1, m = null) {
+  const g = geo.clone();
+  if (m) g.applyMatrix4(m);
+  for (const key of Object.keys(g.attributes)) if (!['position', 'normal'].includes(key)) g.deleteAttribute(key);
+  const c = new THREE.Color(hex).multiplyScalar(k), n = g.attributes.position.count, a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  return g;
+}
+const at = (x, y, z, rx = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, 0, 0)), new THREE.Vector3(1, 1, 1));
+const carGeoCache = new Map();
 export function buildCar(color) {
+  if (!CAR_MATS) CAR_MATS = { body: carBodyMat(), light: carLightMat() };
+  let geos = carGeoCache.get(color);
+  if (!geos) {
+    const paint = CAR_COLORS[color % CAR_COLORS.length];
+    const body = [
+      coloured(G.box(30, 6.5, 16.5), paint, 1, at(0, 7.2, 0)), coloured(G.box(29.4, 2, 16), '#20232a', 1, at(0, 3.6, 0)),
+      coloured(G.box(15, 6.5, 14.2), '#1c2636', 1, at(-1.5, 13.6, 0)), coloured(G.box(13.4, 1.4, 13.2), paint, 1, at(-1.8, 17.4, 0)),
+      coloured(G.box(3, 1.2, 15.6), paint, 1, at(8.6, 10.8, 0)),
+    ];
+    for (const [x, z] of [[9.5, 8], [9.5, -8], [-9.5, 8], [-9.5, -8]]) {
+      body.push(coloured(G.cyl(4, 4, 3, 16), '#18181c', 1, at(x, 4, z, Math.PI / 2)));
+      body.push(coloured(G.cyl(2.3, 2.3, 3.2, 12), '#c9ced6', 1, at(x, 4, z, Math.PI / 2)));
+    }
+    const lights = [];
+    for (const z of [5.2, -5.2]) {
+      lights.push(coloured(G.box(0.8, 2.2, 3.6), '#fff3c4', 3, at(15.1, 8.4, z)));
+      lights.push(coloured(G.box(0.8, 2, 3.6), '#ff2a2a', 2.5, at(-15.1, 8.4, z)));
+    }
+    geos = { body: mergeGeometries(body), lights: mergeGeometries(lights) };
+    carGeoCache.set(color, geos);
+  }
   const root = new THREE.Group();
-  const p = paint(color);
-  const glass = M('#1c2636', { rough: 0.05, metal: 0.9 });
-  const trim = M('#20232a', { rough: 0.6 });
-  root.add(mesh(G.box(30, 6.5, 16.5), p, 0, 7.2, 0));
-  root.add(mesh(G.box(29.4, 2, 16), trim, 0, 3.6, 0));
-  root.add(mesh(G.box(15, 6.5, 14.2), glass, -1.5, 13.6, 0));
-  root.add(mesh(G.box(13.4, 1.4, 13.2), p, -1.8, 17.4, 0));
-  root.add(mesh(G.box(3, 1.2, 15.6), p, 8.6, 10.8, 0)); // hood lip
-  const tire = M('#18181c', { rough: 0.8 }), rim = M('#c9ced6', { metal: 1, rough: 0.25 });
-  for (const [x, z] of [[9.5, 8], [9.5, -8], [-9.5, 8], [-9.5, -8]]) {
-    const w = mesh(G.cyl(4, 4, 3, 16), tire, x, 4, z); w.rotation.x = Math.PI / 2; root.add(w);
-    const r = mesh(G.cyl(2.3, 2.3, 3.2, 12), rim, x, 4, z); r.rotation.x = Math.PI / 2; root.add(r);
-  }
-  const head = M('#fff3c4', { emissive: 4 }), tail = M('#ff2a2a', { emissive: 3 });
-  for (const z of [5.2, -5.2]) {
-    root.add(mesh(G.box(0.8, 2.2, 3.6), head, 15.1, 8.4, z));
-    root.add(mesh(G.box(0.8, 2, 3.6), tail, -15.1, 8.4, z));
-  }
+  const b = new THREE.Mesh(geos.body, CAR_MATS.body); b.castShadow = true; b.receiveShadow = true;
+  root.add(b, new THREE.Mesh(geos.lights, CAR_MATS.light));
   root.scale.setScalar(1.3); // car-sized next to a realistic 26.5-unit person
   return root;
 }
