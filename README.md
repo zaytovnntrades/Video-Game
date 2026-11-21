@@ -31,6 +31,17 @@ Open the URL on a phone in landscape or on desktop (keyboard or gamepad).
 
 **Touch layout:** Settings → *Edit touch controls* lets you drag every button and the stick, resize them, and set their transparency. Your layout is saved.
 
+**Graphics:** Settings has three quality tiers:
+- **Ultra:** sharpest, with dense grass and 2048 shadows.
+- **High:** the default.
+- **Battery saver:** no bloom, shadows or grass.
+
+It also has two looks:
+- **Realistic** (default): physically based skin, cloth, leather and metal, lit by the sky.
+- **Anime:** cel shading with outlines.
+
+Fighters are a single continuous skinned body, so joints bend smoothly. They have sculpted heads with 3D eyes that blink and react, and curved textured hair.
+
 **CPU levels:** Easy, Normal, Hard and Master. Master reads your attack timing: it blocks and blinks on cue and sidesteps beams. Fights last about 1 to 1.5 minutes on a 180-second clock.
 
 ## Character creator

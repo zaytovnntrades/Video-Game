@@ -1,6 +1,7 @@
 // Visual effects: energy blasts, beams, impact bursts, shockwaves, sparks, dust,
 // speed lines and screen flashes. Everything is additive and pooled-ish (short lived).
 import * as THREE from '../../vendor/three/three.module.js';
+import { clone as cloneSkinned } from '../../vendor/three/utils/SkeletonUtils.js';
 
 function glowTexture() {
   const cv = document.createElement('canvas'); cv.width = cv.height = 64;
@@ -94,7 +95,7 @@ export class FX {
   }
 
   afterimage(model) { // blink: a fading coloured silhouette at the old spot
-    const ghost = model.body.clone(true);
+    const ghost = cloneSkinned(model.body); // keeps the pose at the moment of the blink
     const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(model.spec.aura.color), transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending });
     ghost.traverse((o) => { if (o.isMesh) o.material = mat; });
     const holder = new THREE.Group(); holder.position.copy(model.root.position); holder.rotation.copy(model.root.rotation); holder.add(ghost);

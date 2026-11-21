@@ -8,7 +8,8 @@ import { Fight } from './sim/fight.js';
 import { CPU, LEVEL_KEYS } from './sim/ai.js';
 import { DT, MAX_METER, ASCEND_COST, APEX_COST, MAX_BLINK, APEXES, STYLES } from './sim/data.js';
 import { defaultSpec, randomSpec, sanitizeSpec } from './sim/spec.js';
-import { FighterModel } from './client/fighter3d.js';
+import { FighterModel, RENDER } from './client/fighter3d.js';
+import { RoomEnvironment } from '../vendor/three/environments/RoomEnvironment.js';
 import { Arena, STAGES } from './client/arena.js';
 import { FX } from './client/fx.js';
 import { LockCam } from './client/camera.js';
@@ -39,7 +40,11 @@ class App {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.camera = new THREE.PerspectiveCamera(62, 1, 0.1, 1500);
-    this.settings = { volume: 0.7, quality: 'high', cpu: 'normal', stage: 'highlands', hints: true, touchLayout: {}, touchOpacity: 0.85, ...load(SKEY, {}) };
+    this.settings = { volume: 0.7, quality: 'high', style: 'real', cpu: 'normal', stage: 'highlands', hints: true, touchLayout: {}, touchOpacity: 0.85, ...load(SKEY, {}) };
+    if (!['ultra', 'high', 'low'].includes(this.settings.quality)) this.settings.quality = 'high';
+    RENDER.style = this.settings.style;
+    RENDER.quality = this.settings.quality;
+    this.pmrem = new THREE.PMREMGenerator(this.renderer);
     this.fighters = load(FKEY, null);
     if (!Array.isArray(this.fighters) || !this.fighters.length) {
       this.fighters = [{ id: 'f1', spec: defaultSpec() }, { id: 'f2', spec: randomSpec(2024) }, { id: 'f3', spec: randomSpec(77) }];
@@ -72,9 +77,11 @@ class App {
 
   setupComposer() {
     const r = this.renderer;
-    this.composer = new EffectComposer(r);
+    // multisampled HDR target: anti-aliasing survives post-processing, bloom gets real highlights
+    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 });
+    this.composer = new EffectComposer(r, rt);
     this.renderPass = new RenderPass(this.preview.scene, this.camera);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.45, 0.93);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.45, 0.5, 0.95);
     this.composer.addPass(this.renderPass);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -82,8 +89,8 @@ class App {
 
   resize() {
     const w = innerWidth, h = innerHeight;
-    const hi = this.settings.quality === 'high';
-    const pr = Math.min(devicePixelRatio || 1, hi ? 2 : 1.25);
+    const q = this.settings.quality, hi = q !== 'low';
+    const pr = Math.min(devicePixelRatio || 1, q === 'ultra' ? 2 : q === 'high' ? 1.5 : 1);
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
     this.composer?.setPixelRatio(pr);
@@ -96,12 +103,14 @@ class App {
   makePreviewScene() {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#141225');
-    const hemi = new THREE.HemisphereLight(0xcfd8ff, 0x2a2238, 1.0);
+    scene.environment = this.pmrem.fromScene(new RoomEnvironment(), 0.04).texture; // soft studio reflections
+    scene.environmentIntensity = 0.55;
+    const hemi = new THREE.HemisphereLight(0xcfd8ff, 0x2a2238, 0.6);
     const key = new THREE.DirectionalLight(0xffffff, 1.9); key.position.set(3, 5, 4);
     key.castShadow = true; key.shadow.mapSize.set(1024, 1024);
     const rim = new THREE.DirectionalLight(0x9fb8ff, 1.6); rim.position.set(-4, 3, -4);
     scene.add(hemi, key, rim);
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(1.6, 48), new THREE.MeshToonMaterial({ color: 0x2a2645 }));
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(1.6, 48), new THREE.MeshStandardMaterial({ color: 0x24203c, roughness: 0.35, metalness: 0.2 }));
     floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
     const ring = new THREE.Mesh(new THREE.RingGeometry(1.55, 1.62, 64), new THREE.MeshBasicMaterial({ color: 0x8a7dff }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.005; scene.add(ring);
@@ -239,8 +248,11 @@ class App {
     const s = this.settings;
     $('#set-volume').value = s.volume;
     $('#set-volume').oninput = (e) => { s.volume = +e.target.value; this.sfx.setVolume(s.volume); this.saveSettings(); };
-    $('#set-quality').innerHTML = ['high', 'low'].map((q) => `<button class="chip${s.quality === q ? ' sel' : ''}" data-q="${q}">${q === 'high' ? 'High (bloom + shadows)' : 'Battery saver'}</button>`).join('');
-    for (const b of $$('#set-quality .chip')) b.onclick = () => { s.quality = b.dataset.q; this.saveSettings(); this.resize(); this.renderSettings(); };
+    const QN = { ultra: 'Ultra (sharpest, dense grass)', high: 'High', low: 'Battery saver' };
+    $('#set-quality').innerHTML = Object.keys(QN).map((q) => '<button class="chip' + (s.quality === q ? ' sel' : '') + '" data-q="' + q + '">' + QN[q] + '</button>').join('');
+    for (const b of $$('#set-quality .chip')) b.onclick = () => { s.quality = b.dataset.q; RENDER.quality = s.quality; this.saveSettings(); this.resize(); this.renderSettings(); };
+    $('#set-style').innerHTML = [['real', 'Realistic'], ['anime', 'Anime (cel-shaded)']].map(([k, n]) => '<button class="chip' + (s.style === k ? ' sel' : '') + '" data-st="' + k + '">' + n + '</button>').join('');
+    for (const b of $$('#set-style .chip')) b.onclick = () => { s.style = b.dataset.st; RENDER.style = s.style; this.saveSettings(); this.renderSettings(); this.setPreview(this.fighterById(this.pick.me)?.spec || defaultSpec()); };
     $('#set-hints').checked = s.hints;
     $('#set-hints').onchange = (e) => { s.hints = e.target.checked; this.saveSettings(); };
     $('#set-opacity').value = s.touchOpacity;
@@ -272,7 +284,7 @@ class App {
     const seed = (Math.random() * 1e9) | 0;
     const fight = new Fight({ specs: [me, foe], seed, time: training ? 1e6 : undefined });
     const scene = new THREE.Scene();
-    const arena = new Arena(scene, fight.pillars, p.stage, seed);
+    const arena = new Arena(scene, fight.pillars, p.stage, seed, this.pmrem);
     const models = fight.f.map((f) => { const m = new FighterModel(f.spec); scene.add(m.root); scene.add(m.shadow); return m; });
     const fx = new FX(scene);
     const cam = new LockCam(this.camera);
@@ -395,7 +407,7 @@ class App {
     b.fx.camPos = this.camera.position;
     b.fx.sync(view, (o, apex) => this.auraColor(o, apex), dt, performance.now() / 1000);
     b.fx.update(dt);
-    b.arena.update(dt, view.f[0].pos);
+    b.arena.update(dt, view.f[0].pos, this.camera.position);
     if (F.over && !b.training) b.cam.koShot(view.f[F.winner === 0 ? 1 : 0], F.pillars, dt); // frame whoever went down
     else b.cam.update(view.f[0], view.f[1], F.pillars, dt, b.fx.shake, b.intro > 1.2 ? 'intro' : 'fight');
     this.updateHUD(view, dt);
@@ -466,7 +478,8 @@ class App {
       this.updatePreview(dt);
       if (this.mode === 'creator') this.creator.frame(dt);
     }
-    if (this.settings.quality === 'high') this.composer.render(dt);
+    this.renderer.toneMappingExposure = this.renderPass.scene === this.preview.scene ? 1.0 : (this.battle?.arena.exposure ?? 1.0);
+    if (this.settings.quality !== 'low') this.composer.render(dt);
     else this.renderer.render(this.renderPass.scene, this.camera);
   }
 

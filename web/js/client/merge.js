@@ -5,7 +5,7 @@ import { mergeGeometries } from '../../vendor/three/utils/BufferGeometryUtils.js
 function prep(geo, matrix) {
   let g = geo.index ? geo.toNonIndexed() : geo.clone();
   g.applyMatrix4(matrix);
-  for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+  for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) g.deleteAttribute(k);
   if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
   g.morphAttributes = {};
   return g;
