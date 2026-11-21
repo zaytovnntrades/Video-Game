@@ -214,7 +214,34 @@ function headTexture(spec) {
   if (m === 2) { g.fillStyle = spec.outfit.topAccent; for (const z of [-0.85, 0.85]) { g.save(); g.translate(U(z, 1.05), Y(-0.4)); g.rotate(z > 0 ? -0.3 : 0.3); g.fillRect(-3, -14, 6, 28); g.restore(); } }
   if (m === 3) { g.fillStyle = 'rgba(130,70,45,0.6)'; for (let i = 0; i < 26; i++) { const z = (R() - 0.5) * 1.6; g.beginPath(); g.arc(U(z, 1.3), Y(-0.15 - R() * 0.4), 1.3, 0, 7); g.fill(); } }
   if (m === 4) { g.fillStyle = spec.aura.color; for (let i = -1; i <= 1; i++) { g.beginPath(); g.arc(U(i * 0.18, 1.4), Y(1.05 - Math.abs(i) * 0.06), 3, 0, 7); g.fill(); } }
+  if (m === 5) { g.fillStyle = 'rgba(20,20,30,0.7)'; g.fillRect(U(-0.95, 1.2), Y(0.5), U(0.95, 1.2) - U(-0.95, 1.2), Y(0.12) - Y(0.5)); } // war paint band
+  if (m === 6) { g.strokeStyle = spec.aura.color; g.lineWidth = 3; for (const z of [-1, 1]) { g.beginPath(); g.moveTo(U(z * 0.25, 1.4), Y(1.1)); g.lineTo(U(z * 0.55, 1.3), Y(0.6)); g.lineTo(U(z * 0.95, 1.05), Y(-0.2)); g.lineTo(U(z * 0.7, 1.15), Y(-0.85)); g.stroke(); } }
+  if (spec.face.facialHair === 1) { // stubble
+    g.fillStyle = spec.hair.color;
+    for (let i = 0; i < 2600; i++) { const z = (R() - 0.5) * 2.4, y = -0.75 - R() * 1.0; if (Math.abs(z) < 0.32 && y > -0.9 && y < -0.7) continue; g.globalAlpha = 0.18 + R() * 0.25; g.fillRect(U(z, 1.15), Y(y), 1, 1); }
+    g.globalAlpha = 1;
+  }
+  const C = spec.creature;
+  if (C.pattern) { g.save(); g.globalAlpha = 0.85; drawPattern(g, C.pattern, C.markColor, W, H, 1.2); g.restore(); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
+
+// stripes / spots / scales painted over the whole canvas
+function drawPattern(g, kind, color, W, H, scale = 1) {
+  let s = 4; const R = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  g.fillStyle = color; g.strokeStyle = color;
+  if (kind === 1) for (let i = 0; i < 8 * scale; i++) { const y = (i / (8 * scale)) * H + R() * 8; g.beginPath(); g.moveTo(0, y); for (let x = 0; x <= W; x += 12) g.lineTo(x, y + Math.sin(x * 0.045 + i) * 7 + (R() - 0.5) * 4); g.lineWidth = 7 + R() * 7; g.stroke(); }
+  if (kind === 2) for (let i = 0; i < 34 * scale; i++) { const x = R() * W, y = R() * H, r = 7 + R() * 9; g.beginPath(); g.ellipse(x, y, r, r * 0.8, R() * 3, 0, 7); g.lineWidth = 4; g.stroke(); if (R() < 0.45) g.fill(); }
+  if (kind === 3) { g.globalAlpha *= 0.6; g.lineWidth = 2.5; const sz = 18; for (let y = 0; y < H + sz; y += sz * 0.75) for (let x = 0; x < W + sz; x += sz) { g.beginPath(); g.arc(x + ((y / (sz * 0.75)) % 2 ? sz / 2 : 0), y, sz * 0.55, 0, Math.PI); g.stroke(); } }
+}
+function patternTexture(spec) {
+  const c = cvs(256, 256), g = c.getContext('2d');
+  g.fillStyle = spec.body.skin; g.fillRect(0, 0, 256, 256);
+  let s = 3; const R = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  for (let i = 0; i < 120; i++) { g.fillStyle = `rgba(${R() < 0.5 ? '120,60,50' : '255,235,215'},0.05)`; g.beginPath(); g.arc(R() * 256, R() * 256, 5 + R() * 16, 0, 7); g.fill(); }
+  g.globalAlpha = 0.85; drawPattern(g, spec.creature.pattern, spec.creature.markColor, 256, 256, 0.6); g.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1, 0.6); t.anisotropy = 4;
   return t;
 }
 
@@ -225,7 +252,7 @@ export class FighterModel {
     this.body = new THREE.Group(); // pitched/rolled for flight, offset for bob
     this.root.add(this.body);
     this.mats = new Map();
-    this.flash = 0; this.time = 0; this.phase = 0; this.ascended = false;
+    this.flash = 0; this.time = 0; this.phase = 0;
     this.blinkT = 2 + Math.random() * 3; this.expr = { lid: 0, brow: 0, mouth: 0 };
     this.anime = RENDER.style === 'anime';
     this.build(spec);
@@ -233,7 +260,7 @@ export class FighterModel {
 
   // kind: skin | cloth | canvas | leather | metal | hair | plain
   mat(kind, color, opts = {}) {
-    const key = kind + color + (opts.emissive ? '*' + opts.emissive : '') + (opts.side || '') + (opts.map ? '#map' : '');
+    const key = kind + color + (opts.emissive ? '*' + opts.emissive : '') + (opts.side || '') + (opts.tag || (opts.map ? '#map' : ''));
     if (this.mats.has(key)) return this.mats.get(key);
     let m;
     if (this.anime) m = new THREE.MeshToonMaterial({ color: hex(color), gradientMap: gradient(), map: opts.map || null });
@@ -273,7 +300,8 @@ export class FighterModel {
   dispose() {
     this.root.traverse((o) => { if (o.geometry && o.geometry !== HEADGEO && o.geometry !== CAPGEO) o.geometry.dispose(); });
     for (const m of this.mats.values()) { if (m.map && m.map.userData?.own) m.map.dispose(); m.dispose(); }
-    this.headTex?.dispose();
+    this.headTex?.dispose(); this.patternTex?.dispose();
+    this.arcs?.geometry.dispose(); this.arcs?.material.dispose();
     this.aura?.material.dispose();
     this.root.removeFromParent();
   }
@@ -294,7 +322,10 @@ export class FighterModel {
     this.scale = S;
     this.body.scale.setScalar(S);
     const top = OPTIONS.top[O.top], bottom = OPTIONS.bottom[O.bottom], feet = OPTIONS.feet[O.feet], hands = OPTIONS.hands[O.hands];
-    const skinM = this.mat('skin', B.skin);
+    const C = spec.creature;
+    this.patternTex = C.pattern ? patternTexture(spec) : null;
+    const skinM = C.pattern ? this.mat('skin', '#ffffff', { map: this.patternTex, tag: '#pattern' }) : this.mat('skin', B.skin);
+    this.skinM = skinM;
     const topM = this.mat(this.clothKind(top), O.topColor), botM = this.mat(this.clothKind(bottom), O.bottomColor);
     const handM = this.mat(hands === 'Wraps' ? 'cloth' : 'leather', O.handsColor), feetM = this.mat(feet === 'Wraps' ? 'cloth' : 'leather', O.feetColor);
     const MATS = [skinM, topM, botM, handM, feetM]; // body material slots
@@ -394,6 +425,7 @@ export class FighterModel {
     this.buildHands(J, hands, skinM, handM, bw);
     this.buildFeet(J, feet, skinM, feetM, bw);
     this.buildGear(spec, J, top, prof, bw, sw, topM, botM);
+    this.buildCreature(spec, J, skinM, bw, sw);
 
     // bind the skin at the rest pose
     this.root.updateMatrixWorld(true);
@@ -417,6 +449,11 @@ export class FighterModel {
 
     // fewer draw calls: merge each bone's rigid parts per material
     for (const j of [...Object.values(J), this.headFrame, this.hair]) compactChildren(j, OUTLINE);
+    // lightning arcs for Ascend II and above
+    this.arcs = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.arcs.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(16 * 6 * 3), 3));
+    this.arcs.frustumCulled = false; this.arcs.visible = false; this.root.add(this.arcs);
+    this.stage = 0; this.arcT = 0;
     this.flashMats = [...this.mats.values()].filter((m) => m.emissive && !m.userData.iris);
     this.rest = {};
     for (const [k, j] of Object.entries(J)) this.rest[k] = j.rotation.clone();
@@ -426,10 +463,10 @@ export class FighterModel {
   buildHead(spec, headBone, skinM, bw) {
     // all head parts are modelled in "head units" facing +x, inside a frame turned to face +z
     const F = (this.headFrame = new THREE.Group());
-    F.position.set(0, 0.108, 0.014); F.rotation.y = -Math.PI / 2; F.scale.setScalar(HEADK * (0.96 + bw * 0.04));
+    F.position.set(0, 0.09, 0.014); F.rotation.y = -Math.PI / 2; F.scale.setScalar(HEADK * (0.96 + bw * 0.04));
     headBone.add(F);
     this.headTex = headTexture(spec);
-    const headM = this.anime ? this.mat('skin', '#ffffff', { map: this.headTex }) : this.mat('skin', '#ffffff', { map: this.headTex });
+    const headM = this.mat('skin', '#ffffff', { map: this.headTex, tag: '#head' });
     this.part(headGeometry(), headM, F);
     const eyeY = 0.3, eyeX = 1.15;
     const es = spec.face.eyes; // Sharp, Round, Narrow, Fierce
@@ -442,9 +479,10 @@ export class FighterModel {
     const lipsM = this.mat('plain', '#' + hex(spec.body.skin).lerp(hex('#9a4a48'), 0.35).getHexString(), { rough: 0.45 });
     const browM = this.mat('hair', spec.hair.color === '#e8e2d6' ? '#9a917f' : spec.hair.color);
     this.lids = []; this.brows = [];
+    const C = spec.creature;
     for (const z of [-0.5, 0.5]) {
-      // ears (pointed option)
-      if (spec.face.ears === 1) this.part(new THREE.ConeGeometry(0.3, 1.5, 8), skinM, F, { pos: [-0.25, 0.4, z * 2.5], rot: [Math.sign(z) * 1.0, 0, 0.45], scale: [0.45, 1, 1] });
+      // ears (pointed option); animal ears replace them
+      if (C.animalEars) { /* see buildCreature */ } else if (spec.face.ears === 1) this.part(new THREE.ConeGeometry(0.3, 1.5, 8), skinM, F, { pos: [-0.25, 0.4, z * 2.5], rot: [Math.sign(z) * 1.0, 0, 0.45], scale: [0.45, 1, 1] });
       else this.part(new THREE.SphereGeometry(0.42, 10, 8), skinM, F, { pos: [-0.25, 0.05, z * 2.55], scale: [0.55, 1.05, 0.32] });
       const er = 0.245 * eyeScale;
       this.part(new THREE.SphereGeometry(er, 18, 14), sclera, F, { pos: [eyeX, eyeY, z], outline: false });
@@ -462,14 +500,16 @@ export class FighterModel {
       brow.userData.baseRot = brow.rotation.x; brow.userData.side = z; brow.userData.baseY = brow.position.y;
       this.brows.push(brow);
     }
-    // nose
-    this.part(new THREE.ConeGeometry(0.17, 0.82, 12), skinM, F, { pos: [1.5, -0.16, 0], rot: [0, 0, -2.55], scale: [1, 1, 0.8], outline: false });
-    this.part(new THREE.SphereGeometry(0.125, 12, 10), skinM, F, { pos: [1.56, -0.46, 0], scale: [1, 0.9, 1.05], outline: false });
-    for (const z of [-0.13, 0.13]) this.part(new THREE.SphereGeometry(0.085, 10, 8), skinM, F, { pos: [1.47, -0.5, z], outline: false });
+    // nose (an animal snout replaces it)
+    if (!C.snout || C.snout === 2) this.part(new THREE.ConeGeometry(0.17, 0.82, 12), skinM, F, { pos: [1.5, -0.16, 0], rot: [0, 0, -2.55], scale: [1, 1, 0.8], outline: false });
+    if (!C.snout || C.snout === 2) this.part(new THREE.SphereGeometry(0.125, 12, 10), skinM, F, { pos: [1.56, -0.46, 0], scale: [1, 0.9, 1.05], outline: false });
+    if (!C.snout || C.snout === 2) for (const z of [-0.13, 0.13]) this.part(new THREE.SphereGeometry(0.085, 10, 8), skinM, F, { pos: [1.47, -0.5, z], outline: false });
     // mouth: lips + a dark opening that shows when shouting
     this.mouthDark = this.part(new THREE.SphereGeometry(0.26, 12, 8), this.mat('plain', '#3a1418', { rough: 0.8 }), F, { pos: [1.3, -0.97, 0], scale: [0.4, 0.05, 1.1], keep: true, outline: false });
     this.upperLip = this.part(new THREE.CapsuleGeometry(0.055, 0.36, 3, 10), lipsM, F, { pos: [1.41, -0.92, 0], rot: [Math.PI / 2, 0, 0], scale: [0.8, 1, 1], keep: true, outline: false });
     this.lowerLip = this.part(new THREE.CapsuleGeometry(0.068, 0.3, 3, 10), lipsM, F, { pos: [1.385, -1.03, 0], rot: [Math.PI / 2, 0, 0], scale: [0.8, 1, 1], keep: true, outline: false });
+    if (C.snout && C.snout !== 2) for (const m of [this.upperLip, this.lowerLip, this.mouthDark]) m.visible = false; // the muzzle has its own mouth
+    this.buildFacialHair(spec, F);
     // hair
     this.hair = new THREE.Group(); F.add(this.hair);
     this.buildHair(spec.hair.style, spec.hair.color);
@@ -548,7 +588,139 @@ export class FighterModel {
         cap(1.02);
         for (let i = 0; i < 20; i++) { const a = -Math.PI * 0.9 + (i / 19) * Math.PI * 1.8; this.clump([Math.sin(a), 0.1, Math.cos(a)], 0.12 + R(i) * 0.05, 0.04, { droop: 0.8 }); }
         break;
+      case 'Braids':
+        cap();
+        for (let i = 0; i < 7; i++) this.clump([-0.65 + i * 0.22, -0.1, -1], 0.42, 0.024, { droop: 0.95, at: 0.95 });
+        break;
+      case 'Undercut':
+        this.part(hairCap(), this.hairMat, H, { scale: [0.975, 0.975, 0.975] });
+        for (let i = 0; i < 10; i++) this.clump([0.35 + (R(i) - 0.5) * 0.5, 1, 0.2 + (i / 10) * 0.6 - 0.3], 0.13 + R(i + 2) * 0.04, 0.05, { droop: 0.35, back: 0.1 });
+        break;
+      case 'Afro': {
+        const g = new THREE.IcosahedronGeometry(2.05, 4), p = g.attributes.position;
+        for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const k = 1 + Math.sin(x * 7) * Math.sin(y * 6) * Math.sin(z * 7) * 0.05; p.setXYZ(i, x * k, y * k * 0.95, z * k); }
+        g.computeVertexNormals();
+        cap(1.02);
+        this.part(g, this.hairMat, H, { pos: [-0.35, 0.95, 0] });
+        break;
+      }
+      case 'Long Straight':
+        cap(1.02);
+        for (let i = 0; i < 17; i++) { const a = -Math.PI * 0.82 + (i / 16) * Math.PI * 1.64; this.clump([Math.sin(a), 0.25, Math.cos(a) - 0.25], 0.42 + R(i) * 0.06, 0.055, { droop: 1.25, at: 0.98 }); }
+        break;
+      case 'Curly Top':
+        cap(1.02);
+        for (let i = 0; i < 22; i++) { const a = (i / 22) * Math.PI * 2; this.clump([Math.cos(a) * 0.55, 0.9, Math.sin(a) * 0.55 + 0.05], 0.06 + R(i) * 0.03, 0.045, { droop: -0.6 + R(i + 5) * 0.3 }); }
+        break;
+      case 'Locs':
+        cap(1.01);
+        for (let i = 0; i < 16; i++) { const a = -Math.PI * 0.85 + (i / 15) * Math.PI * 1.7; this.clump([Math.sin(a), 0.35, Math.cos(a) - 0.3], 0.46 + R(i) * 0.08, 0.026, { droop: 1.2, at: 0.97 }); }
+        break;
       default: break; // Bald
+    }
+  }
+
+  // ---------------------------------------------------------------- facial hair (head units)
+  buildFacialHair(spec, F) {
+    const fh = spec.face.facialHair; // None, Stubble (painted in the head texture), Goatee, Mustache, Full Beard, Chin Strap
+    if (fh < 2) return;
+    const m = this.mat('hair', spec.hair.color);
+    const shell = (t0, tl) => { // a band of the lower face, front half only
+      const g = new THREE.SphereGeometry(1, 28, 10, Math.PI / 2, Math.PI, Math.PI * t0, Math.PI * tl);
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) { const y = p.getY(i); const t = Math.max(0, (-y - 0.12) / 0.88); p.setXYZ(i, p.getX(i) * 1.52 * (1 - 0.1 * t), y * 1.9, p.getZ(i) * 1.34 * (1 - 0.36 * t)); }
+      g.computeVertexNormals();
+      return g;
+    };
+    if (fh === 2) this.part(new THREE.SphereGeometry(0.28, 14, 10), m, F, { pos: [1.3, -1.42, 0], scale: [0.9, 1.3, 1.1] });
+    if (fh === 3 || fh === 4) this.part(new THREE.CapsuleGeometry(0.08, 0.5, 3, 10), m, F, { pos: [1.47, -0.78, 0], rot: [Math.PI / 2, 0, 0], scale: [0.8, 1, 1] });
+    if (fh === 4) this.part(shell(0.6, 0.42), m, F, { pos: [0, 0.02, 0] });
+    if (fh === 5) this.part(shell(0.72, 0.1), m, F, { pos: [0, 0.02, 0] });
+  }
+
+  // ---------------------------------------------------------------- creature parts
+  buildCreature(spec, J, skinM, bw, sw) {
+    const C = spec.creature, F = this.headFrame;
+    if (!(C.animalEars || C.tail || C.snout || C.horns || C.fangs || C.wings || C.claws)) return;
+    const fur = this.mat('hair', C.fur), inner = this.mat('skin', '#c98a86'), dark = this.mat('plain', '#141012', { rough: 0.3 });
+    const bone = this.mat('plain', '#bfae8e', { rough: 0.75 }), keratin = this.mat('plain', '#2a2420', { rough: 0.4 });
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+    // ears (head units: +x forward, y up, z sideways)
+    const ear = C.animalEars;
+    for (const s of [-1, 1]) {
+      if (ear === 1 || ear === 2 || ear === 3) {
+        const [r, h, x, y, zz, tilt] = { 1: [0.5, 1.6, -0.15, 1.55, 0.95, 0.35], 2: [0.46, 1.15, 0.0, 1.62, 0.88, 0.3], 3: [0.58, 1.9, -0.1, 1.5, 1.0, 0.45] }[ear];
+        this.part(new THREE.ConeGeometry(r, h, 4), fur, F, { pos: [x, y, s * zz], rot: [s * tilt, Math.PI / 4, -0.12], scale: [0.45, 1, 1] });
+        this.part(new THREE.ConeGeometry(r * 0.62, h * 0.72, 4), inner, F, { pos: [x + 0.09, y - 0.08, s * zz * 0.98], rot: [s * tilt, Math.PI / 4, -0.12], scale: [0.3, 1, 1], outline: false });
+      }
+      if (ear === 4) this.part(new THREE.CapsuleGeometry(0.2, 2.0, 4, 10), fur, F, { pos: [-0.25, 2.55, s * 0.5], rot: [s * 0.18, 0, 0.18], scale: [0.55, 1, 1] });
+      if (ear === 5) this.part(new THREE.SphereGeometry(0.4, 12, 10), fur, F, { pos: [-0.15, 1.55, s * 1.05], scale: [0.55, 1, 1] });
+    }
+    // snouts
+    if (C.snout === 1) { // wolf
+      this.part(new THREE.ConeGeometry(0.62, 1.5, 18), fur, F, { pos: [1.85, -0.55, 0], rot: [0, 0, -Math.PI / 2 + 0.1], scale: [1, 1, 0.8] });
+      this.part(new THREE.SphereGeometry(0.2, 12, 10), dark, F, { pos: [2.55, -0.45, 0] });
+    }
+    if (C.snout === 2) { // cat: muzzle pads + whiskers over the human nose
+      for (const s of [-1, 1]) this.part(new THREE.SphereGeometry(0.27, 12, 10), fur, F, { pos: [1.45, -0.66, s * 0.2] });
+      for (const s of [-1, 1]) for (let k = 0; k < 3; k++) this.part(new THREE.CylinderGeometry(0.008, 0.008, 1.1, 4), dark, F, { pos: [1.5, -0.62 + k * 0.08, s * 0.75], rot: [s * (1.45 + k * 0.08), 0, 0], outline: false });
+    }
+    if (C.snout === 3) this.part(new THREE.SphereGeometry(1, 20, 14), skinM, F, { pos: [1.65, -0.68, 0], scale: [1.1, 0.42, 0.72] }); // lizard
+    if (C.snout === 4) { // beak
+      const beak = this.mat('plain', '#d99a2b', { rough: 0.35 });
+      this.part(new THREE.ConeGeometry(0.42, 1.25, 16), beak, F, { pos: [2.0, -0.5, 0], rot: [0, 0, -Math.PI / 2 - 0.25], scale: [1, 1, 0.8] });
+      this.part(new THREE.ConeGeometry(0.3, 0.8, 14), beak, F, { pos: [1.75, -0.8, 0], rot: [0, 0, -Math.PI / 2 + 0.15], scale: [1, 1, 0.75] });
+    }
+    if (C.snout === 5) { // bear
+      this.part(new THREE.SphereGeometry(0.62, 16, 12), fur, F, { pos: [1.5, -0.66, 0], scale: [0.95, 0.7, 0.95] });
+      this.part(new THREE.SphereGeometry(0.2, 12, 10), dark, F, { pos: [2.05, -0.48, 0], scale: [1, 0.8, 1.3] });
+    }
+    // fangs
+    if (C.fangs) for (const s of [-1, 1]) {
+      const pos = C.snout === 1 ? [2.0, -0.9, s * 0.22] : C.snout === 3 ? [2.1, -0.85, s * 0.3] : [1.43, -1.02, s * 0.12];
+      this.part(new THREE.ConeGeometry(0.055, 0.26, 8), bone, F, { pos, rot: [Math.PI, 0, 0], outline: false });
+    }
+    // horns
+    if (C.horns) for (const s of [-1, 1]) {
+      if (C.horns === 1) this.part(new THREE.TorusGeometry(0.55, 0.17, 10, 24, Math.PI * 1.45), bone, F, { pos: [-0.15, 1.0, s * 1.32], rot: [0, 0, 1.2] });
+      if (C.horns === 2) this.part(clumpGeometry(V(0.25, 1.25, s * 1.0), V(0, 0.25, s).normalize(), 1.5, 0.21, V(0.2, 1.4, 0)), bone, F);
+      if (C.horns === 3) this.part(clumpGeometry(V(0.35, 1.6, s * 0.6), V(-0.15, 1, s * 0.25).normalize(), 1.3, 0.17, V(-0.9, 0, 0)), keratin, F);
+      if (C.horns === 4) {
+        this.part(clumpGeometry(V(-0.1, 1.55, s * 0.7), V(-0.2, 1, s * 0.6).normalize(), 1.9, 0.1, V(-0.5, 0.1, s * 0.2)), bone, F);
+        for (const t of [0.45, 0.75]) this.part(clumpGeometry(V(-0.25 - t * 0.4, 1.55 + t * 1.5, s * (0.7 + t * 0.9)), V(0.6, 0.8, 0).normalize(), 0.7, 0.06, V(0, 0.3, 0)), bone, F);
+      }
+    }
+    // tail on the hips (metres)
+    if (C.tail) {
+      const g = new THREE.Group(); g.position.set(0, -0.02, -0.105 * bw); J.hips.add(g); g.userData.keep = true; this.tailG = g;
+      const [len, r, droop, m] = { 1: [0.58, 0.075, V(0, -0.35, 0), fur], 2: [0.72, 0.026, V(0, 0.75, -0.1), fur], 3: [0.62, 0.095, V(0, -0.25, 0), fur], 4: [0.85, 0.085, V(0, -0.25, 0), skinM] }[C.tail];
+      this.part(clumpGeometry(V(0, 0, 0), V(0, -0.3, -1).normalize(), len, r, droop, 1), m, g);
+      if (C.tail === 3) this.part(new THREE.SphereGeometry(0.045, 10, 8), this.mat('hair', '#f2efe8'), g, { pos: [0, -0.31, -0.57], scale: [1, 1, 1.6] }); // white tip
+    }
+    // wings on the back
+    if (C.wings) {
+      const wg = new THREE.Group(); wg.position.set(0, 0.12, -0.12 * bw); J.chest.add(wg); wg.userData.keep = true; this.wingsG = [];
+      const wm = C.wings === 1 ? this.mat('hair', C.fur) : this.mat('plain', C.markColor, { rough: 0.65, side: THREE.DoubleSide });
+      for (const s of [-1, 1]) {
+        const side = new THREE.Group(); side.position.x = s * 0.06; wg.add(side); this.wingsG.push(side); side.userData.s = s;
+        if (C.wings === 1) for (let k = 0; k < 7; k++) {
+          const th = 0.95 - k * 0.27, L = 0.5 + (3 - Math.abs(k - 3)) * 0.07;
+          this.part(new THREE.SphereGeometry(1, 10, 6), wm, side, { pos: [s * Math.cos(th) * L * 0.5, Math.sin(th) * L * 0.5, -0.02 * k], rot: [0, 0, s * th], scale: [L * 0.5, 0.045, 0.09] });
+        } else {
+          const tips = [[0.25, 0.55], [0.62, 0.42], [0.8, 0.12], [0.7, -0.25], [0.35, -0.38]].map(([x, y]) => [s * x, y]);
+          const pos = [];
+          for (let k = 0; k < tips.length - 1; k++) { const [ax, ay] = tips[k], [bx, by] = tips[k + 1]; const mx = (ax + bx) * 0.38, my = (ay + by) * 0.38; pos.push(0, 0, 0, ax, ay, 0, mx, my, 0, 0, 0, 0, mx, my, 0, bx, by, 0); }
+          const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
+          g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3 * 2), 2));
+          this.part(g, wm, side, { outline: false });
+          for (const [x, y] of tips.slice(0, 4)) { const L = Math.hypot(x, y); this.part(new THREE.CylinderGeometry(0.008, 0.012, L, 5), bone, side, { pos: [x / 2, y / 2, 0.005], rot: [0, 0, Math.atan2(-x, y)], outline: false }); }
+        }
+      }
+    }
+    // claws over the knuckles
+    if (C.claws) for (const k of ['L', 'R']) for (let f = 0; f < 4; f++) {
+      const s = k === 'L' ? 1 : -1;
+      this.part(new THREE.ConeGeometry(0.006, 0.035, 6), keratin, J['hand' + k], { pos: [(-0.022 + f * 0.0147) * s, -0.07, 0.03], rot: [Math.PI / 2 + 0.4, 0, 0], outline: false });
     }
   }
 
@@ -589,7 +761,7 @@ export class FighterModel {
     const accM = this.mat('cloth', O.accessoryColor), sashM = this.mat(top.includes('Gi') ? 'canvas' : 'leather', O.sash), trimM = this.mat('canvas', O.topAccent);
     // belt / sash at the waist
     const [, wrx, wrz, wcz] = at(1.0);
-    this.part(new THREE.TorusGeometry(1, 0.22, 8, 36), sashM, J.hips, { pos: [0, 1.0 - hipsY, wcz], rot: [Math.PI / 2, 0, 0], scale: [wrx * bw * 1.12, wrz * bw * 1.12, 0.12] });
+    this.part(new THREE.TorusGeometry(1, 0.1, 8, 40), sashM, J.hips, { pos: [0, 1.0 - hipsY, wcz], rot: [Math.PI / 2, 0, 0], scale: [wrx * bw * 1.1, wrz * bw * 1.1, 0.3] });
     if (top.includes('Gi')) for (const [x, r] of [[0.07, 0.15], [0.11, 0.4]]) this.part(new THREE.BoxGeometry(0.045, 0.2, 0.012), sashM, J.hips, { pos: [x, 0.0, wrz * bw * 1.1 + wcz], rot: [0.05, 0, r] });
     if (O.accessory === 5) this.part(new THREE.BoxGeometry(0.1, 0.085, 0.055), this.mat('leather', O.accessoryColor), J.hips, { pos: [0.15 * bw, 0.06, 0.05] });
     // lapels / trims on the chest
@@ -625,17 +797,43 @@ export class FighterModel {
   }
 
   // ---------------------------------------------------------------- transformation look
-  setColors(ascended) {
-    const hc = ascended ? this.spec.hair.ascend : this.spec.hair.color;
-    const next = this.mat('hair', hc, { emissive: ascended ? 0.35 : 0 });
+  // transformation look: 0 = base, 1-3 = Ascend I-III (each stage has its own colours)
+  setStage(stage) {
+    this.stage = stage;
+    const t = stage > 0 ? this.spec.transforms[stage - 1] : null;
+    const next = this.mat('hair', t ? t.hair : this.spec.hair.color, { emissive: t ? 0.15 + stage * 0.12 : 0 });
     this.hair.traverse((o) => { if (o.isMesh && o.material === this.hairMat) o.material = next; });
     this.hairMat = next;
-    this.aura.material.uniforms.uColor.value.set(ascended ? this.spec.aura.ascend : this.spec.aura.color);
-    // glowing eyes while ascended
-    this.irisMat.emissive = hex(ascended ? this.spec.aura.ascend : '#000000');
-    this.irisMat.emissiveIntensity = ascended ? 1.4 : 0;
-    this.irisMat.userData.glow = true;
+    this.aura.material.uniforms.uColor.value.set(t ? t.aura : this.spec.aura.color);
+    this.irisMat.emissive = hex(t ? t.eyes : '#000000');
+    this.irisMat.emissiveIntensity = t ? 0.9 + stage * 0.45 : 0;
+    // stage III: the skin itself glows faintly with the aura
+    for (const m of [this.skinM, this.mats.get('skin#ffffff#head')]) {
+      if (!m) continue;
+      m.emissive = hex(stage === 3 ? t.aura : '#000000'); m.emissiveIntensity = stage === 3 ? 0.14 : 1;
+      m.userData.e0 = m.emissive.clone(); m.userData.i0 = m.emissiveIntensity;
+    }
+    this.arcs.material.color.set(t ? t.aura : '#ffffff').lerp(WHITE, 0.5);
     this.flashMats = [...this.mats.values()].filter((m) => m.emissive && !m.userData.iris);
+  }
+
+  // jagged lightning around the body (Ascend II+)
+  updateArcs(dt) {
+    this.arcs.visible = this.stage >= 2 && this.body.visible;
+    if (!this.arcs.visible || (this.arcT -= dt) > 0) return;
+    this.arcT = 0.05;
+    const p = this.arcs.geometry.attributes.position, n = this.stage === 3 ? 16 : 9, S = this.scale;
+    p.array.fill(0);
+    let w = 0;
+    for (let i = 0; i < n; i++) {
+      if (Math.random() < 0.35) continue;
+      let x = (Math.random() - 0.5) * 0.7 * S, y = (0.3 + Math.random() * 1.5) * S, z = (Math.random() - 0.5) * 0.5 * S;
+      for (let k = 0; k < 6 && w < p.count - 1; k++) {
+        const nx = x + (Math.random() - 0.5) * 0.18, ny = y + (Math.random() - 0.3) * 0.2, nz = z + (Math.random() - 0.5) * 0.18;
+        p.setXYZ(w++, x, y, z); p.setXYZ(w++, nx, ny, nz); x = nx; y = ny; z = nz;
+      }
+    }
+    p.needsUpdate = true;
   }
 
   // facial expression: 'normal' | 'shout' | 'hurt'
@@ -669,7 +867,8 @@ export class FighterModel {
     const yaw = Math.atan2(v.face.x, v.face.z);
     let dy = yaw - this.root.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     this.root.rotation.y += dy * Math.min(1, dt * 18);
-    if (v.ascended !== this.ascended) { this.ascended = v.ascended; this.setColors(v.ascended); }
+    const stage = v.stage ?? (v.ascended ? 1 : 0);
+    if (stage !== this.stage) this.setStage(stage);
     const fwd = v.vel.x * v.face.x + v.vel.z * v.face.z;
     const side = v.vel.x * -v.face.z + v.vel.z * v.face.x;
     const speed = Math.hypot(v.vel.x, v.vel.z);
@@ -689,12 +888,16 @@ export class FighterModel {
     if (this.cape) this.cape.rotation.x = 0.15 + Math.min(1.2, speed * 0.04 + Math.abs(v.vel.y) * 0.03) + Math.sin(T * 6) * 0.05;
     if (this.scarf) this.scarf.rotation.x = 0.6 + Math.min(0.9, speed * 0.03) + Math.sin(T * 7) * 0.08;
     this.face(P.face || 'normal', dt);
-    const want = P.aura ?? (v.ascended ? 0.55 : 0);
+    this.updateArcs(dt);
+    if (this.tailG) { this.tailG.rotation.y = Math.sin(T * 2.6) * 0.3; this.tailG.rotation.x = -Math.min(0.5, speed * 0.03); }
+    if (this.wingsG) for (const w of this.wingsG) { const flap = (v.flying || v.pos.y > 0.3) ? Math.sin(T * 9) * 0.5 : Math.sin(T * 1.8) * 0.06; w.rotation.y = w.userData.s * (0.35 + flap); }
+    const want = (P.aura ?? (stage ? 0.42 + stage * 0.12 : 0)) * (stage ? 1 + stage * 0.12 : 1);
     this.auraPower += (want - this.auraPower) * Math.min(1, dt * 6);
     this.aura.material.uniforms.uPower.value = this.auraPower;
     this.aura.material.uniforms.uTime.value = T;
     this.aura.visible = this.auraPower > 0.02;
     this.aura.scale.set(this.scale * (1 + this.auraPower * 0.25), this.scale * (0.9 + this.auraPower * 0.3), this.scale * (1 + this.auraPower * 0.25));
+    this.arcs.position.copy(this.body.position);
     // hurt flash
     this.flash = Math.max(0, this.flash - dt * 5);
     for (const m of this.flashMats) { if (!m.userData.e0) { m.userData.e0 = m.emissive.clone(); m.userData.i0 = m.emissiveIntensity; } m.emissive.copy(m.userData.e0).lerp(WHITE, this.flash); m.emissiveIntensity = Math.max(m.userData.i0, this.flash); }
@@ -814,7 +1017,7 @@ export class FighterModel {
         break;
       default: break;
     }
-    if (v.ascended && P.aura === undefined) P.aura = 0.5;
+    if ((v.stage || v.ascended) && P.aura === undefined) P.aura = 0.5;
     return P;
   }
 

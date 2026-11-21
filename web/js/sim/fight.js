@@ -4,7 +4,7 @@
 import {
   DT, ARENA, BODY, MAX_HP, MAX_METER, MAX_BLINK, ROUND_TIME, STYLES, MELEE, COMBO, REACH, HIT_RADIUS, LUNGE_RANGE,
   MAX_COMBO_HITS, SCALING, BLASTS, BEAMS, RUSHES, APEXES, SPEED, DASH_FRAMES, DASH_IN_MAX, CHARGE_RATE,
-  BLINK_WINDOW, BLINK_REGEN, ASCEND_COST, ASCEND_DRAIN, ASCEND_FRAMES, APEX_COST, HITSTOP,
+  BLINK_WINDOW, BLINK_REGEN, ASCEND_COSTS, ASCEND_DRAINS, STAGE_DMG, STAGE_SPEED, ASCEND_FRAMES, APEX_COST, HITSTOP,
 } from './data.js';
 import { sanitizeSpec } from './spec.js';
 import { mulberry32 } from './rng.js';
@@ -53,7 +53,7 @@ class Fighter {
     this.state = 'idle'; this.t = 0;
     this.move = null; this.step = 0; this.queued = false; this.hit = false; this.rushHits = 0;
     this.comboHits = 0; this.calm = 0;
-    this.ascended = false;
+    this.stage = 0; this.nextStage = 0; // transformation: 0 = base, 1-3 = Ascend I-III
     this.prev = blankInput();
     this.latch = {};
     this.used = {}; // a long hold fires its move once, even if it matures while busy
@@ -68,6 +68,7 @@ class Fighter {
   get capA() { return v3(this.pos.x, this.pos.y + 0.25, this.pos.z); }
   get capB() { return v3(this.pos.x, this.pos.y + BODY.height - 0.25, this.pos.z); }
   get onGround() { return this.pos.y <= 0.001; }
+  get ascended() { return this.stage > 0; }
   set(state) { this.state = state; this.t = 0; }
 }
 
@@ -130,7 +131,7 @@ export class Fight {
     const press = (k) => inp[k] && !f.prev[k];
     const release = (k) => !inp[k] && f.prev[k];
     const heldFor = {};
-    for (const k of ['atk', 'blast', 'dash', 'jump']) { heldFor[k] = f.hold[k]; f.hold[k] = inp[k] ? f.hold[k] + 1 : 0; if (!inp[k]) f.used[k] = false; }
+    for (const k of ['atk', 'blast', 'dash', 'jump', 'special']) { heldFor[k] = f.hold[k]; f.hold[k] = inp[k] ? f.hold[k] + 1 : 0; if (!inp[k]) f.used[k] = false; }
     if (press('guard')) f.guardPress = this.tick;
     if (f.cd > 0) f.cd--;
     // facing: always locked on the rival
@@ -140,12 +141,12 @@ export class Fight {
     f.aim = norm(d);
     // passive resources
     if (f.blink < MAX_BLINK && (f.blinkT += DT) >= BLINK_REGEN) { f.blink++; f.blinkT = 0; }
-    if (f.ascended && f.state !== 'apex') {
-      f.meter -= ASCEND_DRAIN * DT;
-      if (f.meter <= 0) { f.meter = 0; f.ascended = false; this.emit({ t: 'descend', who: f.side }); }
+    if (f.stage > 0 && f.state !== 'apex' && f.state !== 'ascending') {
+      f.meter -= ASCEND_DRAINS[f.stage] * DT;
+      if (f.meter <= 0) { f.meter = 0; f.stage = 0; this.emit({ t: 'descend', who: f.side }); }
     }
     if (f.state !== 'stun' && f.state !== 'launched') { if (++f.calm > 30) f.comboHits = 0; } else f.calm = 0;
-    const speedMul = f.style.speed * (f.ascended ? 1.15 : 1);
+    const speedMul = f.style.speed * STAGE_SPEED[f.stage];
     const stick = Math.hypot(inp.mx, inp.my);
     const right = v3(-f.face.z, 0, f.face.x);
     const blast = BLASTS[f.spec.moves.blast], beam = BEAMS[f.spec.moves.beam];
@@ -153,10 +154,16 @@ export class Fight {
     switch (f.state) {
       case 'ko': f.prev = { ...inp }; return;
       case 'idle': case 'guard': case 'charge': {
-        // contextual special: Ascend, or Apex once ascended with a full meter
-        if (press('special')) {
-          if (!f.ascended && f.meter >= ASCEND_COST) { f.meter -= ASCEND_COST; f.set('ascending'); f.vel = v3(); this.emit({ t: 'ascend', who: f.side }); break; }
-          if (f.ascended && f.meter >= APEX_COST - 1) { /* -1: ascension drains a sliver each tick */ f.meter = 0; f.set('apex'); f.vel = v3(); this.emit({ t: 'apexStart', who: f.side }); break; }
+        // special: tap = ascend one stage; hold (or tap at stage III) = Apex finisher
+        // (APEX_COST - 1: an ascended aura drains a sliver every tick)
+        const apexReady = f.stage > 0 && f.meter >= APEX_COST - 1;
+        const tapSpecial = heldFor.special > 0 && release('special') && heldFor.special < HOLD;
+        if ((inp.special && f.hold.special >= HOLD && !f.used.special && apexReady) || (tapSpecial && f.stage === 3 && apexReady)) {
+          f.used.special = true; f.meter = 0; f.set('apex'); f.vel = v3(); this.emit({ t: 'apexStart', who: f.side }); break;
+        }
+        if (tapSpecial && f.stage < 3 && f.meter >= ASCEND_COSTS[f.stage]) {
+          f.meter -= ASCEND_COSTS[f.stage]; f.nextStage = f.stage + 1; f.set('ascending'); f.vel = v3();
+          this.emit({ t: 'ascend', who: f.side, stage: f.nextStage }); break;
         }
         if (inp.guard && f.state !== 'charge') { if (f.state !== 'guard') f.set('guard'); f.vel.x *= 0.7; f.vel.z *= 0.7; if (f.flying) f.vel.y *= 0.7; break; }
         if (f.state === 'guard') f.set('idle');
@@ -274,11 +281,11 @@ export class Fight {
       }
       case 'down': f.vel = v3(); if (f.t >= 40) f.set('idle'); break;
       case 'blinking': f.vel = v3(); if (f.t >= 9) f.set('idle'); break;
-      case 'ascending': f.vel = v3(); if (f.t >= ASCEND_FRAMES) { f.ascended = true; f.set('idle'); this.emit({ t: 'ascended', who: f.side }); } break;
+      case 'ascending': f.vel = v3(); if (f.t >= (f.nextStage === 1 ? ASCEND_FRAMES : 36)) { f.stage = f.nextStage; f.set('idle'); this.emit({ t: 'ascended', who: f.side, stage: f.stage }); } break;
       case 'apex': {
         f.vel = v3();
         if (f.t === 40) this.fireApex(f, o);
-        if (f.t >= 70) { f.set('idle'); f.ascended = false; this.emit({ t: 'descend', who: f.side, quiet: true }); } // the finisher spends the transformation
+        if (f.t >= 70) { f.set('idle'); f.stage = 0; this.emit({ t: 'descend', who: f.side, quiet: true }); } // the finisher spends the transformation
         break;
       }
       default: if (f.t > 60) f.set('idle');
@@ -306,7 +313,7 @@ export class Fight {
       const c = Math.cos(spread), s = Math.sin(spread);
       const dir = norm(v3(f.aim.x * c - f.aim.z * s, f.aim.y, f.aim.x * s + f.aim.z * c));
       const p = f.chest;
-      this.projectiles.push({ id: this.nextId++, owner: f.side, kind: f.spec.moves.blast, pos: v3(p.x + dir.x, p.y + dir.y, p.z + dir.z), vel: v3(dir.x * B.speed, dir.y * B.speed, dir.z * B.speed), speed: B.speed, radius: B.radius, dmg: B.dmg * f.style.blast * (f.ascended ? 1.2 : 1), home: B.home, life: 150, stun: 12, kb: 3 });
+      this.projectiles.push({ id: this.nextId++, owner: f.side, kind: f.spec.moves.blast, pos: v3(p.x + dir.x, p.y + dir.y, p.z + dir.z), vel: v3(dir.x * B.speed, dir.y * B.speed, dir.z * B.speed), speed: B.speed, radius: B.radius, dmg: B.dmg * f.style.blast * STAGE_DMG[f.stage], home: B.home, life: 150, stun: 12, kb: 3 });
     }
     f.set('blastrec');
     this.emit({ t: 'blast', who: f.side, kind: f.spec.moves.blast });
@@ -314,7 +321,7 @@ export class Fight {
 
   fireBeam(f, o, B) {
     const p = f.chest;
-    this.beams.push({ id: this.nextId++, owner: f.side, kind: f.spec.moves.beam, origin: v3(p.x + f.aim.x * 0.8, p.y + f.aim.y * 0.8, p.z + f.aim.z * 0.8), dir: f.aim, len: 0, speed: B.speed, width: B.width, dmg: B.dmg * f.style.blast * (f.ascended ? 1.2 : 1), ticks: B.ticks, every: B.every, timer: 0, hits: 0, life: B.ticks * B.every + 24, blinked: false });
+    this.beams.push({ id: this.nextId++, owner: f.side, kind: f.spec.moves.beam, origin: v3(p.x + f.aim.x * 0.8, p.y + f.aim.y * 0.8, p.z + f.aim.z * 0.8), dir: f.aim, len: 0, speed: B.speed, width: B.width, dmg: B.dmg * f.style.blast * STAGE_DMG[f.stage], ticks: B.ticks, every: B.every, timer: 0, hits: 0, life: B.ticks * B.every + 24, blinked: false });
     this.emit({ t: 'beam', who: f.side, kind: f.spec.moves.beam });
   }
 
@@ -378,7 +385,7 @@ export class Fight {
     }
     if (d.state !== 'stun' && d.state !== 'launched') d.comboHits = 0; // a fresh hit starts a fresh combo
     const scale = Math.max(0.4, 1 - SCALING * d.comboHits);
-    const dmg = h.dmg * scale * (h.kind === 'melee' || h.kind === 'rush' ? a.style.melee * (a.ascended ? 1.2 : 1) : 1);
+    const dmg = h.dmg * scale * (h.kind === 'melee' || h.kind === 'rush' ? a.style.melee * STAGE_DMG[a.stage] : 1);
     d.comboHits++;
     this.damage(a, d, dmg);
     if (this.over) return 'hit';
@@ -520,7 +527,7 @@ export class Fight {
   view() {
     return {
       tick: this.tick, timer: this.timer, over: this.over, winner: this.winner, hitstop: this.hitstop,
-      f: this.f.map((f) => ({ side: f.side, pos: { ...f.pos }, vel: { ...f.vel }, face: { ...f.face }, aim: { ...f.aim }, state: f.state, t: f.t, move: f.move, step: f.step, hp: f.hp, maxHp: f.maxHp, meter: f.meter, blink: f.blink, ascended: f.ascended, flying: f.flying, spec: f.spec })),
+      f: this.f.map((f) => ({ side: f.side, pos: { ...f.pos }, vel: { ...f.vel }, face: { ...f.face }, aim: { ...f.aim }, state: f.state, t: f.t, move: f.move, step: f.step, hp: f.hp, maxHp: f.maxHp, meter: f.meter, blink: f.blink, ascended: f.stage > 0, stage: f.stage, flying: f.flying, spec: f.spec })),
       projectiles: this.projectiles.map((p) => ({ id: p.id, owner: p.owner, kind: p.kind, pos: { ...p.pos }, radius: p.radius, apex: !!p.apex })),
       beams: this.beams.map((b) => ({ id: b.id, owner: b.owner, kind: b.kind, origin: { ...b.origin }, dir: { ...b.dir }, len: b.len, width: b.width, apex: !!b.apex })),
     };

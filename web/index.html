@@ -22,6 +22,7 @@
   <section class="screen side" id="menu" hidden>
     <div class="panel">
       <h2>Main Menu</h2>
+      <div id="profile" class="profile"></div>
       <button class="big" id="btn-battle">Battle vs CPU</button>
       <button class="big" id="btn-training">Training</button>
       <button class="big" data-go="fighters">Fighters &amp; Creator</button>
@@ -41,7 +42,7 @@
   <section class="screen" id="creator" hidden>
     <div id="c-drag"></div>
     <div class="cposes">
-      <button data-pose="idle">Stance</button><button data-pose="strike">Strike</button><button data-pose="beam">Beam</button><button data-pose="charge">Charge</button><button data-pose="ascend">Ascend</button><button data-pose="asc">Toggle Ascended</button><button id="c-zoom">Face</button>
+      <button data-pose="idle">Stance</button><button data-pose="strike">Strike</button><button data-pose="beam">Beam</button><button data-pose="charge">Charge</button><button data-pose="ascend">Ascend</button><button data-pose="asc" id="c-stage">Stage: Base</button><button id="c-zoom">Face</button>
     </div>
     <div class="cpanel">
       <div class="chead"><input id="c-name" maxlength="14" placeholder="Name" autocomplete="off"><button id="c-random" title="Randomize">🎲</button></div>
@@ -119,6 +120,7 @@
       <h1 id="res-title">VICTORY</h1><p id="res-sub"></p>
       <div id="res-names" class="resnames"></div>
       <table id="res-stats" class="stats"></table>
+      <p id="res-xp" class="resxp"></p>
       <div class="row"><button class="big accent" id="btn-rematch">Rematch</button><button class="big" id="btn-results-menu">Menu</button></div>
     </div>
   </section>

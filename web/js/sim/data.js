@@ -15,8 +15,8 @@ export const ROUND_TIME = 180;
 
 // Fighting styles: balanced sidegrades (every style totals the same budget).
 export const STYLES = {
-  brawler: { name: 'Brawler', blurb: 'Hits hard up close, takes hits well.', melee: 1.1, blast: 0.9, speed: 0.95, hp: 1.08, regen: 0.95 },
-  striker: { name: 'Striker', blurb: 'Fast on its feet, long combos.', melee: 1.0, blast: 0.95, speed: 1.12, hp: 0.97, regen: 1.0 },
+  brawler: { name: 'Brawler', blurb: 'Hits hard up close, takes hits well.', melee: 1.06, blast: 0.9, speed: 0.95, hp: 1.05, regen: 0.95 },
+  striker: { name: 'Striker', blurb: 'Fast on its feet, long combos.', melee: 1.02, blast: 0.95, speed: 1.12, hp: 0.98, regen: 1.0 },
   mystic: { name: 'Mystic', blurb: 'Strong blasts, quick aura recovery.', melee: 0.95, blast: 1.18, speed: 1.0, hp: 0.98, regen: 1.15 },
 };
 export const STYLE_KEYS = Object.keys(STYLES);
@@ -65,8 +65,13 @@ export const DASH_IN_MAX = 40;
 export const CHARGE_RATE = 24; // meter per second while charging aura
 export const BLINK_WINDOW = 8; // frames: tap guard this close before a hit lands to blink
 export const BLINK_REGEN = 4.5; // seconds per blink charge
-export const ASCEND_COST = 50;
-export const ASCEND_DRAIN = 2.2; // meter per second while ascended
+// Three transformation stages. Each costs aura to enter, drains aura while held and
+// raises damage and speed. Running dry drops you back to base.
+export const ASCEND_COSTS = [50, 55, 60]; // to reach stage I, II, III
+export const ASCEND_DRAINS = [0, 2.2, 3.2, 4.4]; // meter per second at each stage
+export const STAGE_DMG = [1, 1.15, 1.25, 1.35];
+export const STAGE_SPEED = [1, 1.12, 1.2, 1.28];
+export const ASCEND_COST = ASCEND_COSTS[0];
 export const ASCEND_FRAMES = 50;
 export const APEX_COST = 100;
 export const HITSTOP = { light: 4, heavy: 9, apex: 16 };

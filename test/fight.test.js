@@ -84,8 +84,9 @@ test('charging, ascending and the apex finisher', () => {
   assert.ok(f.f[0].ascended);
   f.f[0].meter = 100;
   const hp = f.f[1].hp;
-  run(f, 200, tapAt('special', 0));
+  run(f, 200, (i) => I({ special: i < 20 })); // hold = Apex
   assert.ok(f.events.some((e) => e.t === 'apex'));
+  assert.equal(f.f[0].stage, 0, 'the finisher spends the transformation');
   assert.ok(hp - f.f[1].hp > 150, `apex damage ${hp - f.f[1].hp}`);
 });
 
@@ -176,8 +177,9 @@ test('specs are sanitized; random specs are valid and avoid gold-on-gold', () =>
     assert.deepEqual(sanitizeSpec(r), r);
     assert.ok(Object.hasOwn(BLASTS, r.moves.blast));
     const gold = (c) => ['#d9a441', '#ffd23f', '#f1c40f'].includes(c);
-    assert.ok(!(gold(r.hair.color) && gold(r.aura.color)) && !(gold(r.hair.ascend) && gold(r.aura.ascend)), `seed ${s}: gold hair with gold aura`);
-    assert.ok(!([0, 2, 3].includes(r.hair.style) && (gold(r.hair.color) || gold(r.hair.ascend))), `seed ${s}: golden spiky hair`);
+    assert.ok(!(gold(r.hair.color) && gold(r.aura.color)) && r.transforms.every((t) => !(gold(t.hair) && gold(t.aura))), `seed ${s}: gold hair with gold aura`);
+    assert.ok(!([0, 2, 3].includes(r.hair.style) && (gold(r.hair.color) || r.transforms.some((t) => gold(t.hair)))), `seed ${s}: golden spiky hair`);
+    assert.ok(!([0, 2, 3].includes(r.hair.style) && r.creature.tail > 0), `seed ${s}: tail with spiky hair`);
   }
 });
 
@@ -243,4 +245,45 @@ test('difficulty ladder: master beats easy, and fights run 1-2 minutes', () => {
   }
   assert.ok(masterWins >= 6, `master won only ${masterWins}/8 against easy`);
   assert.ok(secs / 8 > 35 && secs / 8 < 150, `average fight ${Math.round(secs / 8)} s`);
+});
+
+test('three ascension stages: each costs more, drains faster and hits harder', () => {
+  const f = new Fight({ specs: [defaultSpec(), defaultSpec()], seed: 3 });
+  for (let st = 1; st <= 3; st++) {
+    f.f[0].meter = 100;
+    run(f, 2, () => I());
+    run(f, 60, tapAt('special', 0));
+    assert.equal(f.f[0].stage, st, `reached stage ${st}`);
+  }
+  // drain is fastest at stage III, and running dry drops back to base
+  f.f[0].meter = 5; run(f, 120, () => I());
+  assert.equal(f.f[0].stage, 0);
+  // stage III damage beats base damage on the same jab
+  const jab = (stage) => { const g = new Fight({ specs: [defaultSpec(), defaultSpec()], seed: 3 }); close(g); g.f[0].stage = stage; g.f[0].meter = 100; const hp = g.f[1].hp; run(g, 30, tapAt('atk', 0)); return hp - g.f[1].hp; };
+  assert.ok(jab(3) > jab(0) * 1.3, `stage III jab ${jab(3)} vs base ${jab(0)}`);
+});
+
+test('v1 fighters (single ascended look) load as v2 with three stages', () => {
+  const v1 = { v: 1, name: 'Old', hair: { style: 3, color: '#1d1b22', ascend: '#ff7ab6' }, aura: { color: '#4fc3ff', ascend: '#7cff6b' } };
+  const s = sanitizeSpec(v1);
+  assert.equal(s.v, 2);
+  assert.equal(s.transforms.length, 3);
+  assert.equal(s.transforms[0].hair, '#ff7ab6');
+  assert.equal(s.transforms[0].aura, '#7cff6b');
+  assert.equal(s.hair.style, 3);
+  assert.equal(s.creature.tail, 0);
+  assert.deepEqual(sanitizeSpec(s), s);
+});
+
+test('progression: XP, levels and unlocks', async () => {
+  const { levelOf, xpForLevel, fightXp, unlocksAt, nextUnlock } = await import('../web/js/sim/progress.js');
+  const { UNLOCKS, lockedParts } = await import('../web/js/sim/spec.js');
+  assert.equal(levelOf(0), 1); assert.equal(levelOf(xpForLevel(2)), 2); assert.equal(levelOf(xpForLevel(5) - 1), 4);
+  assert.ok(fightXp({ result: 'win', level: 'master', ko: true, best: 10 }) > fightXp({ result: 'win', level: 'easy' }));
+  assert.ok(fightXp({ result: 'loss' }) > 0);
+  assert.ok(unlocksAt(2).length >= 2 && nextUnlock(1).level === 2);
+  for (const lv of Object.values(UNLOCKS)) assert.ok(lv >= 2 && lv <= 10);
+  const s = sanitizeSpec({ creature: { wings: 2, tail: 1 } });
+  assert.deepEqual(lockedParts(s, 2).sort(), ['wings']);
+  assert.deepEqual(lockedParts(s, 7), []);
 });

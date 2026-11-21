@@ -2,7 +2,7 @@
 // Buttons are "tapped" by pressing for one tick and releasing on the next.
 import { blankInput } from './fight.js';
 import { mulberry32 } from './rng.js';
-import { BEAMS, ASCEND_COST, APEX_COST, MELEE } from './data.js';
+import { BEAMS, ASCEND_COSTS, APEX_COST, MELEE } from './data.js';
 
 export const LEVELS = {
   easy: { react: 0.15, aggro: 0.35, blink: 0.05, guard: 0.2, think: 24 },
@@ -76,7 +76,7 @@ export class CPU {
       if (o.t >= m.startup + m.active && R() < L.react * 0.5) { tap('atk'); return inp; }
     }
     // finisher: ascended with a full aura
-    if (me.ascended && me.meter >= APEX_COST - 1 && dist < 45) { tap('special'); return inp; }
+    if (me.stage > 0 && me.meter >= APEX_COST - 1 && dist < 45) { hold('special', 18); return inp; } // hold = Apex
     // they're flying away from a launcher: follow up at range
     if (o.state === 'launched' && dist > 8 && me.meter >= BEAMS[me.spec.moves.beam].cost && R() < 0.5 * L.aggro) { hold('blast', 20); return inp; }
     if (o.state === 'launched' && dist > 8 && R() < 0.3) { tap('blast'); return inp; }
@@ -84,8 +84,8 @@ export class CPU {
     if (--this.planT <= 0) {
       this.planT = L.think + Math.floor(R() * L.think);
       const r = R();
-      if (me.ascended && me.meter >= APEX_COST - 1) this.plan = 'apex';
-      else if (!me.ascended && me.meter >= ASCEND_COST + 30 && r < 0.45) this.plan = 'ascend';
+      if (me.stage > 0 && me.meter >= APEX_COST - 1) this.plan = 'apex';
+      else if (me.stage < 3 && me.meter >= ASCEND_COSTS[me.stage] + (me.stage ? 20 : 30) && r < 0.45) this.plan = 'ascend';
       else if (me.ascended && me.meter < 99 && r < 0.75) this.plan = dist > 7 ? 'charge' : 'powerup';
       else if (me.meter < 45 && dist > 16 && r < 0.6) this.plan = 'charge';
       else if (dist > 10 && r < 0.6) this.plan = me.meter >= BEAMS[me.spec.moves.beam].cost && R() < 0.4 ? 'beam' : 'blast';
@@ -95,7 +95,8 @@ export class CPU {
     }
 
     switch (this.plan) {
-      case 'apex': case 'ascend': tap('special'); this.planT = 0; break;
+      case 'apex': hold('special', 18); this.planT = 0; break;
+      case 'ascend': tap('special'); this.planT = 0; break;
       case 'charge': hold('dash', 14); this.planT = 0; break; // then the 'charge' state keeps holding
       case 'beam': hold('blast', 20); this.planT = 0; break;
       case 'blast': tap('blast'); inp.mx = this.strafe; break;

@@ -27,7 +27,7 @@ Open the URL on a phone in landscape or on desktop (keyboard or gamepad).
 | GUARD | L | Hold: block. Tap just before a hit: **Blink** behind the attacker. Tap while being comboed: break out (costs a blink and 20 aura) |
 | DASH | Shift | With the stick: dash. Stick neutral: dash at the rival. Hold (stick neutral): charge aura. Dash then ATTACK: Rush special |
 | JUMP | Space | Jump into flight. Hold to rise, tap in the air to drop |
-| ASCEND / APEX | U | At 50 aura: transform. Once ascended with full aura: Apex finisher |
+| ASCEND / APEX | U | Tap to transform one stage (Ascend I / II / III cost 50 / 55 / 60 aura; each is faster and hits harder, but drains aura faster). Hold, once transformed with full aura: Apex finisher |
 
 **Touch layout:** Settings → *Edit touch controls* lets you drag every button and the stick, resize them, and set their transparency. Your layout is saved.
 
@@ -47,10 +47,18 @@ Fighters are a single continuous skinned body, so joints bend smoothly. They hav
 ## Character creator
 
 - **Body:** height, build, shoulders and skin.
-- **Face:** 4 eye shapes, eye colour, 4 brow shapes, 5 marks and 2 ear types.
-- **Hair:** 12 styles, a normal colour and an ascended colour.
+- **Face:** 4 eye shapes, eye colour, 4 brow shapes, 7 marks, 6 facial-hair options and 2 ear types.
+- **Hair:** 18 styles and any colour.
+- **Creature parts**, unlocked by player level:
+  - **Level 2:** animal ears (wolf, cat, fox, rabbit, bear) and tails.
+  - **Level 3:** skin patterns: stripes, spots and scales.
+  - **Level 4:** snouts and beaks.
+  - **Level 5:** horns and fangs.
+  - **Level 7:** wings (feathered or bat) and claws.
+  - Fur and pattern colours are free.
 - **Outfit:** 7 tops, 4 bottoms, 4 footwear, 4 hand types and 6 accessories, each with its own colours.
-- **Aura:** a normal colour and an ascended colour.
+- **Aura:** any colour.
+- **Ascend:** hair, aura and eye-glow colours for each of the 3 stages. Stage II adds lightning; stage III makes the skin glow.
 - **Moves:**
   - a fighting style: Brawler, Striker or Mystic
   - a blast: 3 to choose from
@@ -60,7 +68,9 @@ Fighters are a single continuous skinned body, so joints bend smoothly. They hav
 
 Every swatch row has an "any colour" picker. Fighters can be shared as a text code: *Share* copies it, and *Import Code* adds a friend's fighter.
 
-Looks never change hitboxes. Styles and moves are trade-offs, not upgrades. In 300 CPU-vs-CPU fights, every style and move won between 47% and 54% of the time.
+**Levels:** fights against the CPU earn XP (more for wins, harder levels, knockouts and combos; none in Training). Your level and the next unlock show in the main menu. Unlocks are cosmetic only: imported fighters and CPU rivals may wear parts you haven't unlocked.
+
+Looks never change hitboxes. Styles and moves are trade-offs, not upgrades. In 300 CPU-vs-CPU fights, every style, move and finisher won between 46% and 54% of the time.
 
 ## Project layout
 

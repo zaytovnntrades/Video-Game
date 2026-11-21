@@ -58,7 +58,8 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: 
 .picks, .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .pcard, .chip { padding: 8px 12px; border-radius: 12px; }
 .pcard i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 7px; vertical-align: -1px; }
-.sel { outline: 2px solid var(--accent); background: rgba(255, 178, 63, 0.16) !important; }
+.sel { outline: 2px solid var(--accent); }
+.sel:not(.sw) { background: rgba(255, 178, 63, 0.16) !important; }
 #btn-start { text-align: center; margin-top: 16px; }
 
 /* creator */
@@ -169,3 +170,14 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: 
 .touch.editing .stickbase { pointer-events: auto; opacity: 1; cursor: grab; }
 .touch.editing button, .touch.editing .stickbase { outline: 2px dashed rgba(255, 255, 255, 0.5); outline-offset: 3px; }
 .touch.editing .picked { outline: 3px solid var(--accent); }
+
+/* progression */
+.profile { margin: 4px 0 8px; }
+.profile b { color: var(--accent); font-size: 18px; }
+.xpbar { height: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden; margin: 4px 0; }
+.xpbar i { display: block; height: 100%; background: linear-gradient(90deg, #ffb23f, #ffe27a); }
+.profile small { color: var(--dim); }
+.resxp { color: var(--accent); font-weight: 700; }
+.meter .fill.asc { background: linear-gradient(90deg, #8f3dff, var(--stage, var(--meter-asc))); box-shadow: 0 0 10px var(--stage, var(--meter-asc)); }
+.opt.locked b { color: var(--dim); }
+.lock { font-size: 11px; color: var(--accent); margin-left: 6px; }

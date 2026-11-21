@@ -6,7 +6,8 @@ import { UnrealBloomPass } from '../vendor/three/postprocessing/UnrealBloomPass.
 import { OutputPass } from '../vendor/three/postprocessing/OutputPass.js';
 import { Fight } from './sim/fight.js';
 import { CPU, LEVEL_KEYS } from './sim/ai.js';
-import { DT, MAX_METER, ASCEND_COST, APEX_COST, MAX_BLINK, APEXES, STYLES } from './sim/data.js';
+import { DT, MAX_METER, ASCEND_COSTS, APEX_COST, MAX_BLINK, APEXES, STYLES } from './sim/data.js';
+import { levelOf, xpForLevel, fightXp, unlocksAt, nextUnlock } from './sim/progress.js';
 import { defaultSpec, randomSpec, sanitizeSpec } from './sim/spec.js';
 import { FighterModel, RENDER } from './client/fighter3d.js';
 import { RoomEnvironment } from '../vendor/three/environments/RoomEnvironment.js';
@@ -23,7 +24,8 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 const TEST = new URLSearchParams(location.search).has('test');
 
 // ---------------------------------------------------------------- storage
-const FKEY = 'aa.fighters.v1', SKEY = 'aa.settings.v1';
+const FKEY = 'aa.fighters.v1', SKEY = 'aa.settings.v1', PKEY = 'aa.profile.v1';
+const ROMAN = ['', 'I', 'II', 'III'];
 function load(key, def) { try { const v = JSON.parse(localStorage.getItem(key)); return v ?? def; } catch { return def; } }
 function store(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* storage full or blocked */ } }
 export function encodeSpec(spec) { return btoa(unescape(encodeURIComponent(JSON.stringify(spec)))).replace(/=+$/, ''); }
@@ -50,7 +52,8 @@ class App {
       this.fighters = [{ id: 'f1', spec: defaultSpec() }, { id: 'f2', spec: randomSpec(2024) }, { id: 'f3', spec: randomSpec(77) }];
       this.saveFighters();
     }
-    this.fighters = this.fighters.map((f, i) => ({ id: f.id || 'f' + Date.now() + i, spec: sanitizeSpec(f.spec) }));
+    this.fighters = this.fighters.map((f, i) => ({ id: f.id || 'f' + Date.now() + i, spec: sanitizeSpec(f.spec) })); // also upgrades v1 saves
+    this.profile = { xp: 0, wins: 0, losses: 0, ...load(PKEY, {}) };
     this.sfx = new Sfx(); this.sfx.setVolume(this.settings.volume);
     this.input = new Input($('#ui'));
     this.input.show(false);
@@ -73,6 +76,12 @@ class App {
 
   saveFighters() { store(FKEY, this.fighters); }
   saveSettings() { store(SKEY, this.settings); }
+  saveProfile() { store(PKEY, this.profile); }
+  level() { return levelOf(this.profile.xp); }
+  renderProfile() {
+    const L = this.level(), x0 = xpForLevel(L), x1 = xpForLevel(L + 1), nu = nextUnlock(L);
+    $('#profile').innerHTML = `<b>Lv ${L}</b><div class="xpbar"><i style="width:${Math.min(100, ((this.profile.xp - x0) / (x1 - x0)) * 100)}%"></i></div><small>${this.profile.xp - x0} / ${x1 - x0} XP${nu ? ` · Lv ${nu.level} unlocks ${esc(nu.parts.join(', '))}` : ''}</small>`;
+  }
   fighterById(id) { return this.fighters.find((f) => f.id === id); }
 
   setupComposer() {
@@ -120,7 +129,7 @@ class App {
     const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const pts = new THREE.Points(pg, new THREE.PointsMaterial({ color: 0x8fa0ff, size: 0.05, transparent: true, opacity: 0.7 }));
     scene.add(pts);
-    return { scene, model: null, yaw: 0.4, spin: true, pose: 'idle', t: 0, ascended: false, pts, offsetX: 0 };
+    return { scene, model: null, yaw: 0.4, spin: true, pose: 'idle', t: 0, stage: 0, pts, offsetX: 0 };
   }
 
   setPreview(spec) {
@@ -145,7 +154,7 @@ class App {
     if (P.pose === 'ascend') { st = 'ascending'; t = P.t % 90; if (t >= 50) st = 'idle'; }
     if (state === 'attack') t = P.t % 34;
     void cycle;
-    m.update({ pos: { x: P.offsetX, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, face: { x: Math.sin(P.yaw), y: 0, z: Math.cos(P.yaw) }, state: st, t, move: moves[mi], ascended: P.ascended || (P.pose === 'ascend' && P.t % 90 >= 50), flying: false }, dt);
+    m.update({ pos: { x: P.offsetX, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, face: { x: Math.sin(P.yaw), y: 0, z: Math.cos(P.yaw) }, state: st, t, move: moves[mi], stage: P.pose === 'ascend' ? (P.t % 90 >= 50 ? Math.max(1, P.stage) : 0) : P.stage, flying: false }, dt);
     m.root.rotation.y = P.yaw; // no smoothing in the preview
     P.pts.rotation.y += dt * 0.05;
     // camera: full-body framing, pushed left/right so the panel doesn't cover the fighter
@@ -165,8 +174,8 @@ class App {
     this.renderPass.scene = inFight || name === 'results' ? (this.battle ? this.battle.scene : this.preview.scene) : this.preview.scene;
     const P = this.preview;
     P.camX = 0; P.zoom = 1;
-    if (name === 'title') { this.setPreview(randomSpec((Math.random() * 1e9) | 0)); P.pose = 'charge'; P.spin = true; P.ascended = Math.random() < 0.5; P.camX = 0; }
-    if (name === 'menu') { this.setPreview(this.fighterById(this.pick.me)?.spec || defaultSpec()); P.pose = 'idle'; P.spin = true; P.ascended = false; P.camX = 0.55; }
+    if (name === 'title') { this.setPreview(randomSpec((Math.random() * 1e9) | 0)); P.pose = 'charge'; P.spin = true; P.stage = Math.floor(Math.random() * 4); P.camX = 0; }
+    if (name === 'menu') { this.setPreview(this.fighterById(this.pick.me)?.spec || defaultSpec()); P.pose = 'idle'; P.spin = true; P.stage = 0; P.camX = 0.55; this.renderProfile(); }
     if (name === 'fighters') this.renderFighters();
     if (name === 'select') this.renderSelect();
     if (name === 'settings') this.renderSettings();
@@ -326,7 +335,7 @@ class App {
     clearTimeout(this.bannerT); this.bannerT = setTimeout(() => el.classList.remove('on'), secs * 1000);
   }
 
-  auraColor(side, apex) { const f = this.battle.fight.f[side]; return f.ascended || apex ? f.spec.aura.ascend : f.spec.aura.color; }
+  auraColor(side, apex) { const f = this.battle.fight.f[side]; const st = f.stage || (apex ? 1 : 0); return st ? f.spec.transforms[st - 1].aura : f.spec.aura.color; }
 
   handleEvents() {
     const b = this.battle, F = b.fight;
@@ -350,8 +359,8 @@ class App {
         case 'beamCharge': case 'charge': this.sfx.play('charge'); break;
         case 'beam': this.sfx.play('beam'); break;
         case 'dash': this.sfx.play('dash'); { const f = F.f[e.who]; if (f.pos.y < 0.5) b.fx.dust(f.pos.x, f.pos.z); } break;
-        case 'ascend': this.sfx.play('ascend'); if (e.who === 0) this.callout('ASCEND!'); break;
-        case 'ascended': { const f = F.f[e.who]; b.fx.burst(f.pos.x, f.pos.y + 1, f.pos.z, f.spec.aura.ascend, { heavy: true, apex: true, size: 3 }); b.fx.dust(f.pos.x, f.pos.z, true); break; }
+        case 'ascend': this.sfx.play('ascend'); if (e.who === 0) this.callout('ASCEND ' + ROMAN[e.stage] + '!'); break;
+        case 'ascended': { const f = F.f[e.who]; b.fx.burst(f.pos.x, f.pos.y + 1, f.pos.z, f.spec.transforms[e.stage - 1].aura, { heavy: true, apex: true, size: 2 + e.stage }); b.fx.dust(f.pos.x, f.pos.z, true); break; }
         case 'descend': if (e.who === 0 && !e.quiet) this.callout('Aura faded'); break;
         case 'apexStart': this.sfx.play('apex'); this.banner(APEXES[F.f[e.who].spec.moves.apex].name.toUpperCase(), 1.4); break;
         case 'apex': b.fx.flash = 0.4; b.fx.flashColor.set(this.auraColor(e.who, true)); b.fx.shake = 1; break;
@@ -423,7 +432,10 @@ class App {
       $(`#hud-hp${i}`).style.width = pct + '%';
       $(`#hud-ghost${i}`).style.width = (Math.max(f.hp, b.ghostHp[i]) / f.maxHp) * 100 + '%';
       $(`#hud-meter${i}`).style.width = (f.meter / MAX_METER) * 100 + '%';
-      $(`#hud-meter${i}`).classList.toggle('asc', f.ascended);
+      $(`#hud-meter${i}`).classList.toggle('asc', f.stage > 0);
+      $(`#hud-meter${i}`).style.setProperty('--stage', f.stage ? f.spec.transforms[f.stage - 1].aura : '');
+      const nm = $(`#hud-name${i}`), want = f.spec.name + (f.stage ? '  ·  ' + ROMAN[f.stage] : '');
+      if (nm.textContent !== want) nm.textContent = want;
       $(`#hud-blink${i}`).innerHTML = '<i class="on"></i>'.repeat(f.blink) + '<i></i>'.repeat(MAX_BLINK - f.blink);
       b.comboT[i] -= dt;
       const c = $(`#hud-combo${i}`);
@@ -431,8 +443,9 @@ class App {
     }
     $('#hud-timer').textContent = Math.ceil(view.timer);
     const me = view.f[0];
-    if (me.ascended) this.input.setSpecial('APEX', me.meter >= APEX_COST - 1);
-    else this.input.setSpecial('ASCEND', me.meter >= ASCEND_COST);
+    if (me.stage > 0 && me.meter >= APEX_COST - 1) this.input.setSpecial(me.stage === 3 ? 'APEX' : 'HOLD: APEX', true);
+    else if (me.stage < 3) this.input.setSpecial('ASCEND ' + ROMAN[me.stage + 1], me.meter >= ASCEND_COSTS[me.stage]);
+    else this.input.setSpecial('APEX', false);
     // off-screen rival marker
     const r = view.f[1], v = new THREE.Vector3(r.pos.x, r.pos.y + 1, r.pos.z).project(this.camera);
     const behind = v.z > 1, off = behind || Math.abs(v.x) > 0.95 || Math.abs(v.y) > 0.9;
@@ -457,6 +470,17 @@ class App {
       return `<tr><td>${Math.round(b.stats[0][k])}</td><th>${label}</th><td>${Math.round(b.stats[1][k])}</td></tr>`;
     }).join('');
     $('#res-names').innerHTML = `<span>${esc(F.f[0].spec.name)}</span><span>${esc(F.f[1].spec.name)}</span>`;
+    if (!b.training && !b.xpGiven) {
+      b.xpGiven = true;
+      const before = this.level();
+      const gain = fightXp({ result: w === 0 ? 'win' : w === 1 ? 'loss' : 'draw', level: this.pick.level, ko: F.reason === 'ko', best: b.stats[0].best });
+      this.profile.xp += gain; if (w === 0) this.profile.wins++; else if (w === 1) this.profile.losses++;
+      this.saveProfile();
+      const after = this.level(), news = [];
+      for (let L = before + 1; L <= after; L++) news.push(...unlocksAt(L));
+      $('#res-xp').innerHTML = `+${gain} XP` + (after > before ? ` · <b>LEVEL ${after}!</b>` + (news.length ? ` Unlocked: ${esc(news.join(', '))}` : '') : '');
+      if (after > before) this.sfx.play('ascend');
+    }
     this.show('results');
     this.renderPass.scene = b.scene;
   }
