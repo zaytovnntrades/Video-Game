@@ -14,8 +14,27 @@ export class LockCam {
     this.cinema = null; // {t, from, to} for KO / apex shots
   }
 
+  // KO / results shot: slow orbit around the fighter who went down, always framed
+  koShot(target, pillars, dt) {
+    this.koT = (this.koT || 0) + dt;
+    const c = new THREE.Vector3(target.pos.x, target.pos.y + 0.9, target.pos.z);
+    const a = this.koYaw ?? (this.koYaw = Math.atan2(this.pos.x - c.x, this.pos.z - c.z));
+    const ang = a + this.koT * 0.35;
+    const want = new THREE.Vector3(c.x + Math.sin(ang) * 5.5, Math.max(0.6, c.y + 1.6), c.z + Math.cos(ang) * 5.5);
+    for (const p of pillars) {
+      if (want.y > p.h + 0.5) continue;
+      const dx = want.x - p.x, dz = want.z - p.z, d = Math.hypot(dx, dz);
+      if (d < p.r + 0.8) { want.x = p.x + (dx / d) * (p.r + 0.8); want.z = p.z + (dz / d) * (p.r + 0.8); }
+    }
+    this.pos.lerp(want, 1 - Math.exp(-dt * 4));
+    this.look.lerp(c, 1 - Math.exp(-dt * 8));
+    this.cam.position.copy(this.pos); this.cam.lookAt(this.look);
+    this.cam.fov += (50 - this.cam.fov) * Math.min(1, dt * 3); this.cam.updateProjectionMatrix();
+  }
+
   // me/them: fighter views, pillars from the sim, dt seconds, shake 0..1
   update(me, them, pillars, dt, shake = 0, mode = 'fight') {
+    this.koT = 0; this.koYaw = undefined;
     const a = tmp.set(me.pos.x, me.pos.y + 1.3, me.pos.z);
     const b = tmp2.set(them.pos.x, them.pos.y + 1.1, them.pos.z);
     const d = new THREE.Vector3().subVectors(b, a);

@@ -29,6 +29,10 @@ Open the URL on a phone in landscape or on desktop (keyboard or gamepad).
 | JUMP | Space | Jump into flight. Hold to rise, tap in the air to drop |
 | ASCEND / APEX | U | At 50 aura: transform. Once ascended with full aura: Apex finisher |
 
+**Touch layout:** Settings → *Edit touch controls* lets you drag every button and the stick, resize them, and set their transparency. Your layout is saved.
+
+**CPU levels:** Easy, Normal, Hard and Master. Master reads your attack timing: it blocks and blinks on cue and sidesteps beams. Fights last about 1 to 1.5 minutes on a 180-second clock.
+
 ## Character creator
 
 - **Body:** height, build, shoulders and skin.

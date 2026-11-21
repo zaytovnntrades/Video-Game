@@ -231,3 +231,16 @@ test('holding BLAST through a busy moment still fires the beam once free', () =>
   run(f, 80, (i) => I({ blast: i < 40 }));
   assert.equal(f.events.filter((e) => e.t === 'beam' && e.who === 0).length, 1);
 });
+
+test('difficulty ladder: master beats easy, and fights run 1-2 minutes', () => {
+  let masterWins = 0, secs = 0;
+  for (let s = 1; s <= 8; s++) {
+    const f = new Fight({ specs: [randomSpec(s * 5), randomSpec(s * 5 + 1)], seed: s });
+    const a = new CPU(0, 'master', s), b = new CPU(1, 'easy', s + 9);
+    while (!f.over) f.step([a.think(f), b.think(f)]);
+    if (f.winner === 0) masterWins++;
+    secs += f.tick / 60;
+  }
+  assert.ok(masterWins >= 6, `master won only ${masterWins}/8 against easy`);
+  assert.ok(secs / 8 > 35 && secs / 8 < 150, `average fight ${Math.round(secs / 8)} s`);
+});

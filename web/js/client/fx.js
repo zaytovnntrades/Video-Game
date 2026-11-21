@@ -19,11 +19,11 @@ function starTexture() {
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
-const BEAM_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }';
-const BEAM_FS = `uniform vec3 uColor; uniform float uTime; varying vec2 vUv;
+const BEAM_VS = 'varying vec2 vUv; varying float vDepth; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position,1.0); vDepth = -mv.z; gl_Position = projectionMatrix * mv; }';
+const BEAM_FS = `uniform vec3 uColor; uniform float uTime; varying vec2 vUv; varying float vDepth;
 void main(){ float r = abs(vUv.x - 0.5) * 2.0; /* ribbon: x across, y along */ float wob = sin(vUv.y * 60.0 - uTime * 40.0) * 0.08 + sin(vUv.y * 23.0 - uTime * 25.0) * 0.06;
   float core = smoothstep(0.55 + wob, 0.0, r); float glow = smoothstep(1.0, 0.2, r);
-  vec3 c = mix(uColor, vec3(1.0), core); gl_FragColor = vec4(c * 1.5, max(core, glow * 0.6)); }`;
+  vec3 c = mix(uColor, vec3(1.0), core); gl_FragColor = vec4(c * 1.5, max(core, glow * 0.6) * smoothstep(1.0, 8.0, vDepth)); }`; // fade right in front of the lens
 
 export class FX {
   constructor(scene) {
@@ -101,6 +101,8 @@ export class FX {
     this.add(holder, 0.35, (o, k) => { mat.opacity = 0.35 * k; o.scale.setScalar(1 + (1 - k) * 0.15); }, true); // geometry is the live model's
   }
 
+  nearFade(p) { return this.camPos ? Math.max(0.08, Math.min(1, (this.camPos.distanceTo(p) - 2) / 7)) : 1; }
+
   // projectiles/beams follow the sim view every frame
   sync(view, colorOf, dt, time) {
     const seen = new Set();
@@ -118,6 +120,7 @@ export class FX {
       }
       m.position.set(p.pos.x, p.pos.y, p.pos.z);
       m.userData.halo.material.rotation += dt * 4;
+      m.userData.halo.material.opacity = this.nearFade(m.position);
       m.userData.halo.scale.setScalar(Math.min(p.radius * 5, 6.5) + Math.sin(time * 30) * 0.4);
       if ((m.userData.trail += dt) > 0.03) { m.userData.trail = 0; const tr = Math.min(p.radius * 3, 3.5); const t = this.sprite(m.userData.col, tr); t.position.copy(m.position); this.add(t, 0.2, (o, k) => { o.material.opacity = k * 0.5; o.scale.setScalar(tr * k); }); }
     }
@@ -154,6 +157,11 @@ export class FX {
       if (u.c2) { const s = Math.sin(time * 12) * w * 0.9, c = Math.cos(time * 12) * w * 0.9; u.cyl.position.set(s, c, 0); u.c2.position.set(-s, -c, 0); u.cyl.scale.set(w * 0.6, w * 0.6, b.len); u.c2.scale.set(w * 0.6, w * 0.6, b.len); }
       u.head.position.set(0, 0, b.len); u.tip.position.set(0, 0, b.len);
       const hs = Math.min(b.width, 1.6); u.head.scale.setScalar(hs * (4.5 + Math.sin(time * 40))); u.muzzle.scale.setScalar(hs * 3);
+      if (this.camPos) { // glows right at the camera would white out the screen
+        const tipW = new THREE.Vector3(0, 0, b.len).applyMatrix4(m.matrixWorld);
+        u.head.material.opacity = u.tip.material.opacity = this.nearFade(tipW);
+        u.muzzle.material.opacity = this.nearFade(m.position);
+      }
       u.mat.uniforms.uTime.value = time;
       if (Math.random() < 0.5) this.sparks(b.origin.x + b.dir.x * b.len, b.origin.y + b.dir.y * b.len, b.origin.z + b.dir.z * b.len, col, 3, 8);
       this.shake = Math.max(this.shake, b.apex ? 0.5 : 0.12);

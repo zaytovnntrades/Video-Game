@@ -40,6 +40,7 @@ export class Input {
     const R = 52;
     const setKnob = () => { knob.style.transform = `translate(${this.stick.x * R}px, ${-this.stick.y * R}px)`; };
     zone.addEventListener('pointerdown', (e) => {
+      if (this.editing) return;
       this.stick.id = e.pointerId; zone.setPointerCapture(e.pointerId);
       const r = zone.getBoundingClientRect();
       this.stick.ox = e.clientX; this.stick.oy = e.clientY;
@@ -52,18 +53,78 @@ export class Input {
       const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
       this.stick.x = x; this.stick.y = y; setKnob();
     });
-    const end = (e) => { if (e.pointerId !== this.stick.id) return; this.stick.id = null; this.stick.x = this.stick.y = 0; setKnob(); base.classList.remove('on'); };
+    const end = (e) => { if (e.pointerId !== this.stick.id) return; this.stick.id = null; this.stick.x = this.stick.y = 0; setKnob(); base.classList.remove('on'); this.placeStick(); };
+    this.base = base; this.zone = zone;
     zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
     for (const b of el.querySelectorAll('button')) {
       const k = b.dataset.k;
-      const on = (e) => { e.preventDefault(); this.touch[k] = true; b.classList.add('down'); b.setPointerCapture?.(e.pointerId); navigator.vibrate?.(8); };
+      const on = (e) => { e.preventDefault(); if (this.editing) return; this.touch[k] = true; b.classList.add('down'); b.setPointerCapture?.(e.pointerId); navigator.vibrate?.(8); };
       const off = (e) => { e.preventDefault(); this.touch[k] = false; b.classList.remove('down'); };
       b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('lostpointercapture', off);
       b.addEventListener('contextmenu', (e) => e.preventDefault());
     }
   }
 
-  show(on) { this.el.style.display = on ? '' : 'none'; this.enabled = on; if (!on) { this.keys.clear(); this.touch = blankInput(); } }
+  // ---- custom layout: {key: {x, y, s}} with x/y as fractions of the screen (button centre)
+  applyLayout(layout = {}, opacity = 1) {
+    this.layout = layout;
+    for (const b of this.el.querySelectorAll('.btns button')) {
+      const L = layout[b.dataset.k];
+      if (L) Object.assign(b.style, { position: 'fixed', left: L.x * 100 + 'vw', top: L.y * 100 + 'vh', right: 'auto', bottom: 'auto', transform: `translate(-50%,-50%) scale(${L.s})` });
+      else ['position', 'left', 'top', 'right', 'bottom', 'transform'].forEach((p) => { b.style[p] = ''; });
+    }
+    this.el.style.setProperty('--touch-op', opacity); // CSS keeps the 'special not ready' dimming on top of this
+    this.placeStick();
+  }
+
+  placeStick() { // resting position of the stick
+    const L = this.layout?.stick, r = this.zone.getBoundingClientRect();
+    if (L) { this.base.style.left = `${L.x * innerWidth - r.left}px`; this.base.style.top = `${L.y * innerHeight - r.top}px`; this.base.style.transform = `scale(${L.s})`; }
+    else { this.base.style.left = ''; this.base.style.top = ''; this.base.style.transform = ''; }
+  }
+
+  // drag buttons around; onPick(key) when one is selected, onChange(layout) after every move
+  setEditing(on, onPick, onChange) {
+    this.editing = on;
+    this.el.classList.toggle('editing', on);
+    this.show(on || false);
+    this.enabled = false;
+    if (!on) { this.el.querySelectorAll('.picked').forEach((x) => x.classList.remove('picked')); return; }
+    const items = [...this.el.querySelectorAll('.btns button'), this.base];
+    for (const it of items) {
+      if (it._edit) continue;
+      it._edit = true;
+      it.addEventListener('pointerdown', (e) => {
+        if (!this.editing) return;
+        e.preventDefault(); e.stopPropagation();
+        const k = it.dataset.k || 'stick';
+        const rect = it.getBoundingClientRect();
+        const cur = this.layout[k] || { x: (rect.left + rect.width / 2) / innerWidth, y: (rect.top + rect.height / 2) / innerHeight, s: 1 };
+        this.layout[k] = { ...cur };
+        const ox = e.clientX - cur.x * innerWidth, oy = e.clientY - cur.y * innerHeight;
+        this.el.querySelectorAll('.picked').forEach((x) => x.classList.remove('picked'));
+        it.classList.add('picked'); this.picked = k; this.editPick?.(k);
+        const move = (ev) => {
+          this.layout[k].x = Math.max(0.03, Math.min(0.97, (ev.clientX - ox) / innerWidth));
+          this.layout[k].y = Math.max(0.05, Math.min(0.95, (ev.clientY - oy) / innerHeight));
+          this.applyLayout(this.layout, this.opacityVal); this.editChange?.(this.layout);
+        };
+        const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); this.editChange?.(this.layout); };
+        addEventListener('pointermove', move); addEventListener('pointerup', up);
+      }, true);
+    }
+    this.editPick = onPick; this.editChange = onChange;
+  }
+
+  resizePicked(s) {
+    const k = this.picked; if (!k) return;
+    const it = k === 'stick' ? this.base : this.el.querySelector(`[data-k="${k}"]`);
+    const rect = it.getBoundingClientRect();
+    this.layout[k] = { ...(this.layout[k] || { x: (rect.left + rect.width / 2) / innerWidth, y: (rect.top + rect.height / 2) / innerHeight }), s };
+    this.applyLayout(this.layout, this.opacityVal); this.editChange?.(this.layout);
+  }
+
+  show(on) { this.el.style.display = on ? '' : 'none'; this.enabled = on; if (on) this.placeStick?.(); if (!on) { this.keys.clear(); this.touch = blankInput(); } }
 
   setSpecial(label, ready) { if (this.special.textContent !== label) this.special.textContent = label; this.special.classList.toggle('ready', ready); }
 

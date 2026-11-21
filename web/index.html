@@ -68,6 +68,8 @@
       <label class="crow"><span>Volume</span><input id="set-volume" type="range" min="0" max="1" step="0.05"></label>
       <h3>Graphics</h3><div id="set-quality" class="chips"></div>
       <label class="crow"><span>Show control hints in Training</span><input id="set-hints" type="checkbox"></label>
+      <label class="crow"><span>Touch button opacity</span><input id="set-opacity" type="range" min="0.25" max="1" step="0.05"></label>
+      <button class="big" id="btn-layout">Edit touch controls</button>
     </div>
   </section>
 
@@ -97,6 +99,14 @@
     <div class="combo c0" id="hud-combo0"></div><div class="combo c1" id="hud-combo1"></div>
     <div id="marker" hidden>▲</div>
     <div id="hud-hint" class="hint">Tap ATTACK for combos · hold for Smash · hold BLAST for a beam · hold DASH to charge · tap GUARD just before a hit to Blink</div>
+  </section>
+
+  <section class="screen" id="layout" hidden>
+    <div class="layoutbar">
+      <b>Drag any button or the stick.</b>
+      <label>Size <input id="lay-size" type="range" min="0.6" max="1.6" step="0.05" value="1"></label>
+      <button id="lay-reset">Reset</button><button class="accent" id="lay-done">Done</button>
+    </div>
   </section>
 
   <section class="screen" id="pause" hidden>

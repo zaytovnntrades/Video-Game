@@ -5,7 +5,7 @@ import { RenderPass } from '../vendor/three/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from '../vendor/three/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from '../vendor/three/postprocessing/OutputPass.js';
 import { Fight } from './sim/fight.js';
-import { CPU } from './sim/ai.js';
+import { CPU, LEVEL_KEYS } from './sim/ai.js';
 import { DT, MAX_METER, ASCEND_COST, APEX_COST, MAX_BLINK, APEXES, STYLES } from './sim/data.js';
 import { defaultSpec, randomSpec, sanitizeSpec } from './sim/spec.js';
 import { FighterModel } from './client/fighter3d.js';
@@ -39,7 +39,7 @@ class App {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.camera = new THREE.PerspectiveCamera(62, 1, 0.1, 1500);
-    this.settings = { volume: 0.7, quality: 'high', cpu: 'normal', stage: 'highlands', hints: true, ...load(SKEY, {}) };
+    this.settings = { volume: 0.7, quality: 'high', cpu: 'normal', stage: 'highlands', hints: true, touchLayout: {}, touchOpacity: 0.85, ...load(SKEY, {}) };
     this.fighters = load(FKEY, null);
     if (!Array.isArray(this.fighters) || !this.fighters.length) {
       this.fighters = [{ id: 'f1', spec: defaultSpec() }, { id: 'f2', spec: randomSpec(2024) }, { id: 'f3', spec: randomSpec(77) }];
@@ -49,6 +49,8 @@ class App {
     this.sfx = new Sfx(); this.sfx.setVolume(this.settings.volume);
     this.input = new Input($('#ui'));
     this.input.show(false);
+    this.input.opacityVal = this.settings.touchOpacity;
+    this.input.applyLayout(this.settings.touchLayout, this.settings.touchOpacity);
     this.preview = this.makePreviewScene();
     this.creator = new Creator(this);
     this.setupComposer();
@@ -159,6 +161,8 @@ class App {
     if (name === 'fighters') this.renderFighters();
     if (name === 'select') this.renderSelect();
     if (name === 'settings') this.renderSettings();
+    if (this.input.editing && name !== 'layout') this.input.setEditing(false);
+    if (name === 'layout') this.editLayout();
   }
 
   bindUI() {
@@ -222,7 +226,7 @@ class App {
     const card = (f, sel, side) => `<button class="pcard${sel ? ' sel' : ''}" data-side="${side}" data-id="${f.id}"><i style="background:${f.spec.aura.color}"></i>${esc(f.spec.name)}</button>`;
     $('#pick-me').innerHTML = this.fighters.map((f) => card(f, f.id === p.me, 'me')).join('');
     $('#pick-foe').innerHTML = `<button class="pcard${p.foe === 'random' ? ' sel' : ''}" data-side="foe" data-id="random"><i style="background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red)"></i>Random</button>` + this.fighters.map((f) => card(f, f.id === p.foe, 'foe')).join('');
-    $('#pick-level').innerHTML = (this.selectMode === 'training' ? ['stand', 'guard', 'easy'] : ['easy', 'normal', 'hard']).map((l) => `<button class="chip${(this.selectMode === 'training' ? p.dummy || 'stand' : p.level) === l ? ' sel' : ''}" data-l="${l}">${l[0].toUpperCase() + l.slice(1)}</button>`).join('');
+    $('#pick-level').innerHTML = (this.selectMode === 'training' ? ['stand', 'guard', 'easy'] : LEVEL_KEYS).map((l) => `<button class="chip${(this.selectMode === 'training' ? p.dummy || 'stand' : p.level) === l ? ' sel' : ''}" data-l="${l}">${l[0].toUpperCase() + l.slice(1)}</button>`).join('');
     $('#pick-stage').innerHTML = Object.entries(STAGES).map(([k, s]) => `<button class="chip${p.stage === k ? ' sel' : ''}" data-s="${k}">${s.name}</button>`).join('');
     $('#level-label').textContent = this.selectMode === 'training' ? 'Dummy' : 'CPU level';
     for (const b of $$('.pcard')) b.addEventListener('click', () => { this.sfx.play('ui'); if (b.dataset.side === 'me') p.me = b.dataset.id; else p.foe = b.dataset.id; this.renderSelect(); });
@@ -239,6 +243,18 @@ class App {
     for (const b of $$('#set-quality .chip')) b.onclick = () => { s.quality = b.dataset.q; this.saveSettings(); this.resize(); this.renderSettings(); };
     $('#set-hints').checked = s.hints;
     $('#set-hints').onchange = (e) => { s.hints = e.target.checked; this.saveSettings(); };
+    $('#set-opacity').value = s.touchOpacity;
+    $('#set-opacity').oninput = (e) => { s.touchOpacity = +e.target.value; this.input.opacityVal = s.touchOpacity; this.input.applyLayout(s.touchLayout, s.touchOpacity); this.saveSettings(); };
+    $('#btn-layout').onclick = () => this.show('layout');
+  }
+
+  editLayout() {
+    const s = this.settings;
+    this.input.applyLayout(s.touchLayout, s.touchOpacity);
+    this.input.setEditing(true, (k) => { $('#lay-size').value = s.touchLayout[k]?.s ?? 1; }, (layout) => { s.touchLayout = layout; this.saveSettings(); });
+    $('#lay-size').oninput = (e) => this.input.resizePicked(+e.target.value);
+    $('#lay-reset').onclick = () => { s.touchLayout = {}; this.saveSettings(); this.input.applyLayout({}, s.touchOpacity); $('#lay-size').value = 1; };
+    $('#lay-done').onclick = () => { this.sfx.play('ui'); this.show('settings'); };
   }
 
   toast(msg) {
@@ -380,7 +396,8 @@ class App {
     b.fx.sync(view, (o, apex) => this.auraColor(o, apex), dt, performance.now() / 1000);
     b.fx.update(dt);
     b.arena.update(dt, view.f[0].pos);
-    b.cam.update(view.f[0], view.f[1], F.pillars, dt, b.fx.shake, b.intro > 1.2 ? 'intro' : 'fight');
+    if (F.over && !b.training) b.cam.koShot(view.f[F.winner === 0 ? 1 : 0], F.pillars, dt); // frame whoever went down
+    else b.cam.update(view.f[0], view.f[1], F.pillars, dt, b.fx.shake, b.intro > 1.2 ? 'intro' : 'fight');
     this.updateHUD(view, dt);
     if (b.outro > 0) { b.outro -= dt; if (b.outro <= 0) this.showResults(); }
   }
@@ -444,7 +461,7 @@ class App {
     if (this.battle && this.mode === 'fight') this.stepBattle(dt);
     else if (this.battle && (this.mode === 'results' || this.mode === 'pause')) {
       const view = this.battle.fight.view();
-      if (this.mode === 'results') { this.battle.fight.step([{}, {}]); this.battle.models.forEach((m, i) => m.update(view.f[i], dt)); this.battle.fx.update(dt); this.battle.cam.update(view.f[0], view.f[1], this.battle.fight.pillars, dt, 0); }
+      if (this.mode === 'results') { this.battle.fight.step([{}, {}]); this.battle.models.forEach((m, i) => m.update(view.f[i], dt)); this.battle.fx.update(dt); this.battle.cam.koShot(view.f[this.battle.fight.winner === 0 ? 1 : 0], this.battle.fight.pillars, dt); }
     } else {
       this.updatePreview(dt);
       if (this.mode === 'creator') this.creator.frame(dt);

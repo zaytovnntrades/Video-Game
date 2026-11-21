@@ -139,19 +139,19 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: 
 /* touch controls */
 #ui > .touch { position: absolute; inset: 0; pointer-events: none; }
 .stickzone { position: absolute; left: 0; top: 18%; bottom: 0; width: 42%; pointer-events: auto; touch-action: none; }
-.stickbase { position: absolute; left: calc(110px + var(--safe-l)); top: 62%; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.25); opacity: 0.6; }
-.stickbase.on { opacity: 1; }
+.stickbase { --o: var(--touch-op, 1); position: absolute; left: calc(110px + var(--safe-l)); top: 62%; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.25); opacity: calc(var(--o) * 0.6); }
+.stickbase.on { opacity: var(--o); }
 .stickknob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: rgba(255, 255, 255, 0.35); border: 2px solid rgba(255, 255, 255, 0.7); }
 .btns { position: absolute; right: calc(14px + var(--safe-r)); bottom: calc(14px + var(--safe-b)); width: 250px; height: 230px; pointer-events: none; }
-.btns button { position: absolute; pointer-events: auto; touch-action: none; border-radius: 50%; width: 74px; height: 74px; padding: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; background: rgba(20, 17, 40, 0.55); border: 2px solid rgba(255, 255, 255, 0.45); color: #fff; }
+.btns button { opacity: var(--touch-op, 1); position: absolute; pointer-events: auto; touch-action: none; border-radius: 50%; width: 74px; height: 74px; padding: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; background: rgba(20, 17, 40, 0.55); border: 2px solid rgba(255, 255, 255, 0.45); color: #fff; }
 .btns button.down { background: rgba(255, 255, 255, 0.35); transform: scale(0.94); }
 .b-atk { right: 0; bottom: 70px; width: 86px !important; height: 86px !important; border-color: #ff9a4a !important; }
 .b-blast { right: 90px; bottom: 112px; border-color: #4fc3ff !important; }
 .b-guard { right: 160px; bottom: 50px; border-color: #9ff3ff !important; }
 .b-dash { right: 92px; bottom: 26px; border-color: #c4ff7a !important; }
 .b-jump { right: 4px; bottom: 0; width: 64px !important; height: 64px !important; }
-.b-special { right: 22px; bottom: 166px; width: 66px !important; height: 66px !important; opacity: 0.5; }
-.b-special.ready { opacity: 1; border-color: #ffd23f !important; box-shadow: 0 0 16px #ffd23f; animation: pulse 1s infinite; }
+.b-special { right: 22px; bottom: 166px; width: 66px !important; height: 66px !important; opacity: calc(var(--touch-op, 1) * 0.5) !important; }
+.b-special.ready { opacity: var(--touch-op, 1) !important; border-color: #ffd23f !important; box-shadow: 0 0 16px #ffd23f; animation: pulse 1s infinite; }
 @media (hover: hover) and (pointer: fine) { .touch .stickzone, .touch .stickbase { display: none; } .btns { opacity: 0.5; } }
 @media (orientation: portrait) {
   .side { align-items: flex-end; } .side .panel { max-height: 62%; }
@@ -159,3 +159,13 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: 
   #c-drag { width: 100%; bottom: 54%; } .cposes { bottom: auto; top: calc(10px + var(--safe-t)); max-width: 100%; }
 }
 #marker { position: absolute; color: #ff6b7a; font-size: 26px; text-shadow: 0 0 8px #ff2d4b, 0 2px 0 #000; pointer-events: none; }
+
+/* touch layout editor */
+#layout { pointer-events: none; background: rgba(10, 8, 25, 0.35); }
+#layout > * { pointer-events: auto; }
+.layoutbar { position: absolute; left: 50%; top: calc(10px + var(--safe-t)); transform: translateX(-50%); display: flex; gap: 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px 12px; white-space: nowrap; z-index: 5; }
+.layoutbar label { display: flex; gap: 6px; align-items: center; color: var(--dim); }
+.touch.editing .stickzone { pointer-events: none; }
+.touch.editing .stickbase { pointer-events: auto; opacity: 1; cursor: grab; }
+.touch.editing button, .touch.editing .stickbase { outline: 2px dashed rgba(255, 255, 255, 0.5); outline-offset: 3px; }
+.touch.editing .picked { outline: 3px solid var(--accent); }
