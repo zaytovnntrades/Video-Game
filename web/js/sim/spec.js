@@ -40,7 +40,7 @@ export function defaultSpec() {
     face: { eyes: 0, eyeColor: '#2a5f9e', brows: 0, marks: 0, ears: 0 },
     hair: { style: 1, color: '#1d1b22', ascend: '#e8f4ff' },
     outfit: {
-      top: 0, topColor: '#2c2c34', topAccent: '#c0392b', bottom: 0, bottomColor: '#2c2c34', sash: '#c0392b',
+      top: 0, topColor: '#3d3d8f', topAccent: '#ecf0f1', bottom: 0, bottomColor: '#2c2c34', sash: '#c0392b',
       feet: 0, feetColor: '#1d1b22', hands: 1, handsColor: '#ecf0f1', accessory: 0, accessoryColor: '#c0392b',
     },
     aura: { color: '#4fc3ff', ascend: '#c77dff' },

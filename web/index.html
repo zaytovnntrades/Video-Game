@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#141225">
+<title>Aura Ascendants</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="flash"></div>
+<div id="ui">
+
+  <section class="screen" id="title">
+    <div class="logo"><small>A 3D arena fighter</small><h1>AURA<br>ASCENDANTS</h1></div>
+    <p class="tap">Tap to start</p>
+  </section>
+
+  <section class="screen side" id="menu" hidden>
+    <div class="panel">
+      <h2>Main Menu</h2>
+      <button class="big" id="btn-battle">Battle vs CPU</button>
+      <button class="big" id="btn-training">Training</button>
+      <button class="big" data-go="fighters">Fighters &amp; Creator</button>
+      <button class="big" data-go="howto">How to Play</button>
+      <button class="big" data-go="settings">Settings</button>
+    </div>
+  </section>
+
+  <section class="screen side" id="fighters" hidden>
+    <div class="panel wide">
+      <div class="head"><button class="back" data-go="menu">‹ Back</button><h2>Your Fighters</h2></div>
+      <div id="fighter-list" class="flist"></div>
+      <div class="row"><button class="big accent" id="btn-new">+ Create Fighter</button><button class="big" id="btn-import">Import Code</button></div>
+    </div>
+  </section>
+
+  <section class="screen" id="creator" hidden>
+    <div id="c-drag"></div>
+    <div class="cposes">
+      <button data-pose="idle">Stance</button><button data-pose="strike">Strike</button><button data-pose="beam">Beam</button><button data-pose="charge">Charge</button><button data-pose="ascend">Ascend</button><button data-pose="asc">Toggle Ascended</button><button id="c-zoom">Face</button>
+    </div>
+    <div class="cpanel">
+      <div class="chead"><input id="c-name" maxlength="14" placeholder="Name" autocomplete="off"><button id="c-random" title="Randomize">🎲</button></div>
+      <div class="ctabs"></div>
+      <div class="cbody"></div>
+      <div class="row"><button class="big" id="c-cancel">Cancel</button><button class="big accent" id="c-save">Save</button></div>
+    </div>
+  </section>
+
+  <section class="screen side" id="select" hidden>
+    <div class="panel wide">
+      <div class="head"><button class="back" data-go="menu">‹ Back</button><h2 id="select-title">Battle</h2></div>
+      <h3>Your fighter</h3><div id="pick-me" class="picks"></div>
+      <h3>Opponent</h3><div id="pick-foe" class="picks"></div>
+      <h3 id="level-label">CPU level</h3><div id="pick-level" class="chips"></div>
+      <h3>Stage</h3><div id="pick-stage" class="chips"></div>
+      <button class="big accent" id="btn-start">Fight!</button>
+    </div>
+  </section>
+
+  <section class="screen side" id="settings" hidden>
+    <div class="panel">
+      <div class="head"><button class="back" data-go="menu">‹ Back</button><h2>Settings</h2></div>
+      <label class="crow"><span>Volume</span><input id="set-volume" type="range" min="0" max="1" step="0.05"></label>
+      <h3>Graphics</h3><div id="set-quality" class="chips"></div>
+      <label class="crow"><span>Show control hints in Training</span><input id="set-hints" type="checkbox"></label>
+    </div>
+  </section>
+
+  <section class="screen side" id="howto" hidden>
+    <div class="panel wide scroll">
+      <div class="head"><button class="back" data-go="menu">‹ Back</button><h2>How to Play</h2></div>
+      <table class="keys">
+        <tr><th>Stick / WASD</th><td>Move. Forward always means <em>toward your rival</em> (lock-on), even in the air.</td></tr>
+        <tr><th>ATTACK / J</th><td>Tap repeatedly for a 5-hit combo (it lunges in from range). <b>Hold</b> for a Smash that breaks guard and launches.</td></tr>
+        <tr><th>BLAST / K</th><td>Tap: energy blast (homes in, costs a little aura). <b>Hold</b>: charge and fire your Beam (30+ aura).</td></tr>
+        <tr><th>GUARD / L</th><td>Hold to block (chip damage only). <b>Tap right before a hit</b> to Blink behind the attacker. While being comboed, tap to break out (costs a blink + 20 aura).</td></tr>
+        <tr><th>DASH / Shift</th><td>With the stick: quick dash. Stick neutral: dash straight at the rival. <b>Hold</b> (stick neutral): charge aura. Dash → ATTACK: Rush special (30 aura).</td></tr>
+        <tr><th>JUMP / Space</th><td>Jump into flight. Hold to rise, tap in the air to drop. Push forward to close height with the rival.</td></tr>
+        <tr><th>ASCEND / U</th><td>At 50 aura: transform (faster, +20% damage, new hair and aura colour; aura drains). Once ascended with full aura: your Apex finisher.</td></tr>
+      </table>
+      <p class="tip"><b>Tip:</b> fight at range with blasts while you charge, then dash in. Smash a turtling opponent. Save one blink to escape the combo that would have finished you.</p>
+    </div>
+  </section>
+
+  <section class="screen" id="fight" hidden>
+    <div class="hud">
+      <div class="bar p0"><div class="name" id="hud-name0"></div><div class="hp"><div class="ghost" id="hud-ghost0"></div><div class="fill" id="hud-hp0"></div></div><div class="meter"><div class="fill" id="hud-meter0"></div><i class="mark"></i></div><div class="blinks" id="hud-blink0"></div></div>
+      <div class="timer" id="hud-timer">99</div>
+      <div class="bar p1"><div class="name" id="hud-name1"></div><div class="hp"><div class="ghost" id="hud-ghost1"></div><div class="fill" id="hud-hp1"></div></div><div class="meter"><div class="fill" id="hud-meter1"></div><i class="mark"></i></div><div class="blinks" id="hud-blink1"></div></div>
+      <button id="btn-pause" aria-label="Pause">II</button>
+    </div>
+    <div class="combo c0" id="hud-combo0"></div><div class="combo c1" id="hud-combo1"></div>
+    <div id="hud-hint" class="hint">Tap ATTACK for combos · hold for Smash · hold BLAST for a beam · hold DASH to charge · tap GUARD just before a hit to Blink</div>
+  </section>
+
+  <section class="screen" id="pause" hidden>
+    <div class="panel center"><h2>Paused</h2><button class="big accent" id="btn-resume">Resume</button><button class="big" id="btn-quit">Quit to Menu</button></div>
+  </section>
+
+  <section class="screen" id="results" hidden>
+    <div class="panel center">
+      <h1 id="res-title">VICTORY</h1><p id="res-sub"></p>
+      <div id="res-names" class="resnames"></div>
+      <table id="res-stats" class="stats"></table>
+      <div class="row"><button class="big accent" id="btn-rematch">Rematch</button><button class="big" id="btn-results-menu">Menu</button></div>
+    </div>
+  </section>
+
+  <div id="banner"></div>
+  <div id="callout"></div>
+  <div id="toast"></div>
+  <div id="nogl" hidden><h2>WebGL2 needed</h2><p>This game needs WebGL2. Update iOS / your browser and try again.</p></div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
