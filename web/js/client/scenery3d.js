@@ -778,6 +778,7 @@ export class UltraScene {
       spots.push([x0 + 2 * TILE + 5, y0 + 2 * TILE + 5, -1, -1], [x0 + 12 * TILE - 5, y0 + 2 * TILE + 5, 1, -1],
         [x0 + 2 * TILE + 5, y0 + 12 * TILE - 5, -1, 1], [x0 + 12 * TILE - 5, y0 + 12 * TILE - 5, 1, 1]);
     }
+    this.lamps = spots.map(([x, z]) => [x, z]); // for camera collision
     const n = spots.length;
     const metal = keep(new THREE.MeshStandardMaterial({ color: '#2b2f36', roughness: 0.4, metalness: 0.7 }));
     const poleG = keep(new THREE.CylinderGeometry(0.9, 1.3, 70, 8)); poleG.translate(0, 35, 0);

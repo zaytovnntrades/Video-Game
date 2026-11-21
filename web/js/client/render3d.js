@@ -488,7 +488,10 @@ export class Renderer3D {
       const o = SH * (d / back) + 4; // shoulder offset grows with distance, plus a margin
       const cx = px - fx * d + rx * o, cz = pz - fz * d + rz * o;
       const t = tileAt(this.map, Math.floor(cx / TILE), Math.floor(cz / TILE));
-      if (t === T.BUILD || t === T.WALL || t === T.TREE) { dist = Math.max(8, d - 7); break; }
+      let blocked = t === T.BUILD || t === T.WALL || t === T.TREE;
+      // street-lamp poles too, so a pole never fills the frame
+      if (!blocked && this.mapScene.lamps) for (const [lx, lz] of this.mapScene.lamps) if (Math.abs(lx - cx) < 6 && Math.abs(lz - cz) < 6) { blocked = true; break; }
+      if (blocked) { dist = Math.max(8, d - 7); break; }
     }
     const shoulder = SH * Math.min(1, dist / back);
     const sx = rx * shoulder, sz = rz * shoulder;
