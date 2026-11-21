@@ -1,0 +1,6 @@
+{
+  "appId": "com.auraascendants.game",
+  "appName": "Aura Ascendants",
+  "webDir": "web",
+  "ios": { "contentInset": "never", "backgroundColor": "#141225", "scrollEnabled": false }
+}

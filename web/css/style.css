@@ -137,7 +137,7 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: 
 .stats td:first-child { text-align: left; } .stats td:last-child { text-align: right; } .stats th { color: var(--dim); font-weight: 500; }
 
 /* touch controls */
-.touch { position: absolute; inset: 0; pointer-events: none; }
+#ui > .touch { position: absolute; inset: 0; pointer-events: none; }
 .stickzone { position: absolute; left: 0; top: 18%; bottom: 0; width: 42%; pointer-events: auto; touch-action: none; }
 .stickbase { position: absolute; left: calc(110px + var(--safe-l)); top: 62%; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.25); opacity: 0.6; }
 .stickbase.on { opacity: 1; }
@@ -158,3 +158,4 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: 
   .cpanel { left: calc(10px + var(--safe-l)); right: calc(10px + var(--safe-r)); top: 46%; width: auto; }
   #c-drag { width: 100%; bottom: 54%; } .cposes { bottom: auto; top: calc(10px + var(--safe-t)); max-width: 100%; }
 }
+#marker { position: absolute; color: #ff6b7a; font-size: 26px; text-shadow: 0 0 8px #ff2d4b, 0 2px 0 #000; pointer-events: none; }

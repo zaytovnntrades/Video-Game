@@ -444,7 +444,7 @@ export class FighterModel {
     }
   }
 
-  hit() { this.flash = 1; }
+  hit() { this.flash = 0.55; }
 
   targetPose(v, T, fwd, side, speed, dt) {
     const st = v.state, t = v.t;

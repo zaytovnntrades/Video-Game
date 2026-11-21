@@ -45,13 +45,14 @@ export class FX {
 
   add(obj, life, update, keepGeo = false) { this.scene.add(obj); this.items.push({ obj, life, max: life, update, keepGeo }); }
 
-  burst(x, y, z, color, { size = 1.6, heavy = false, apex = false } = {}) {
+  burst(x, y, z, color, { size = 1.0, heavy = false, apex = false } = {}) {
+    size *= 0.6;
     const s = this.sprite('#ffffff', size * (heavy ? 1.6 : 1), this.star);
     s.position.set(x, y, z); s.material.rotation = Math.random() * 6;
     this.add(s, heavy ? 0.22 : 0.14, (o, k) => { o.scale.setScalar(size * (heavy ? 1.6 : 1) * (1 + (1 - k) * 0.8)); o.material.opacity = k; });
-    const g = this.sprite(color, size * 2.4); g.position.set(x, y, z);
-    this.add(g, 0.25, (o, k) => { o.material.opacity = k; o.scale.setScalar(size * 2.4 * (1.4 - k * 0.4)); });
-    if (heavy || apex) this.ring(x, y, z, color, apex ? 14 : 5);
+    const g = this.sprite(color, size * 2); g.position.set(x, y, z);
+    this.add(g, 0.22, (o, k) => { o.material.opacity = k * 0.7; o.scale.setScalar(size * 2 * (1.4 - k * 0.4)); });
+    if (heavy || apex) this.ring(x, y, z, color, apex ? 10 : 3);
     this.sparks(x, y, z, color, heavy ? 22 : 10, heavy ? 16 : 10);
     if (heavy) this.shake = Math.max(this.shake, apex ? 1.0 : 0.45);
     if (apex) { this.flash = 1; this.flashColor.set(color); }
@@ -94,10 +95,10 @@ export class FX {
 
   afterimage(model) { // blink: a fading coloured silhouette at the old spot
     const ghost = model.body.clone(true);
-    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(model.spec.aura.color), transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending });
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(model.spec.aura.color), transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending });
     ghost.traverse((o) => { if (o.isMesh) o.material = mat; });
     const holder = new THREE.Group(); holder.position.copy(model.root.position); holder.rotation.copy(model.root.rotation); holder.add(ghost);
-    this.add(holder, 0.35, (o, k) => { mat.opacity = 0.6 * k; o.scale.setScalar(1 + (1 - k) * 0.15); }, true); // geometry is the live model's
+    this.add(holder, 0.35, (o, k) => { mat.opacity = 0.35 * k; o.scale.setScalar(1 + (1 - k) * 0.15); }, true); // geometry is the live model's
   }
 
   // projectiles/beams follow the sim view every frame

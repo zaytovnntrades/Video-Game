@@ -26,7 +26,8 @@ export class LockCam {
     // pitch toward the rival, but cap it so a rival directly above/below stays in frame
     const pitch = Math.atan2(d.y, Math.max(h, 0.001));
     const cp = Math.max(-0.95, Math.min(0.95, pitch));
-    const back = 4.6 + Math.min(4, dist * 0.06);
+    const steep = Math.abs(Math.sin(pitch)); // rival far above/below: pull back, favour your fighter
+    const back = 4.6 + Math.min(4, dist * 0.06) + steep * 3.5;
     const want = new THREE.Vector3().copy(a)
       .addScaledVector(this.flat, -back * Math.cos(cp))
       .addScaledVector(right, 1.15 * this.shoulder)
@@ -39,10 +40,14 @@ export class LockCam {
       if (Math.hypot(dx, dz) < p.r + 0.8) { const k = (p.r + 0.8) / Math.hypot(dx, dz); want.x = p.x + dx * k; want.z = p.z + dz * k; }
     }
     want.y = Math.max(0.5, want.y);
-    const lookWant = new THREE.Vector3().lerpVectors(a, b, dist < 6 ? 0.5 : 0.62);
+    const lookWant = new THREE.Vector3().lerpVectors(a, b, dist < 6 ? 0.5 : 0.62 - steep * 0.42);
+    lookWant.y = Math.min(lookWant.y, a.y + 4); lookWant.y = Math.max(lookWant.y, a.y - 6); // keep your fighter on screen
     if (mode === 'intro') lookWant.copy(a);
-    const k = 1 - Math.exp(-dt * (mode === 'intro' ? 3 : 7));
+    const k = 1 - Math.exp(-dt * (mode === 'intro' ? 3 : 11));
     this.pos.lerp(want, k);
+    // never fall far behind a fighter being knocked across the map
+    const lag = this.pos.distanceTo(want);
+    if (mode !== 'intro' && lag > 3) this.pos.lerp(want, 1 - 3 / lag);
     this.look.lerp(lookWant, 1 - Math.exp(-dt * 10));
     this.cam.position.copy(this.pos);
     if (shake > 0) this.cam.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake).multiplyScalar(0.6));

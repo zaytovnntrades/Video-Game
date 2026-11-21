@@ -72,7 +72,7 @@ class App {
     const r = this.renderer;
     this.composer = new EffectComposer(r);
     this.renderPass = new RenderPass(this.preview.scene, this.camera);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.5, 0.82);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.45, 0.93);
     this.composer.addPass(this.renderPass);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -94,8 +94,8 @@ class App {
   makePreviewScene() {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#141225');
-    const hemi = new THREE.HemisphereLight(0xcfd8ff, 0x2a2238, 1.3);
-    const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(3, 5, 4);
+    const hemi = new THREE.HemisphereLight(0xcfd8ff, 0x2a2238, 1.0);
+    const key = new THREE.DirectionalLight(0xffffff, 1.9); key.position.set(3, 5, 4);
     key.castShadow = true; key.shadow.mapSize.set(1024, 1024);
     const rim = new THREE.DirectionalLight(0x9fb8ff, 1.6); rim.position.set(-4, 3, -4);
     scene.add(hemi, key, rim);
@@ -307,7 +307,7 @@ class App {
       switch (e.t) {
         case 'hit': {
           m.hit();
-          b.fx.burst(e.x, e.y, e.z, this.auraColor(e.by, e.apex), { heavy: e.heavy, apex: e.apex, size: e.kind === 'blast' ? 1.4 : 1.6 });
+          b.fx.burst(e.x, e.y, e.z, this.auraColor(e.by, e.apex), { heavy: e.heavy, apex: e.apex, size: e.kind === 'blast' ? 1.1 : 1.0 });
           this.sfx.play(e.heavy || e.apex ? 'heavy' : 'hit');
           const s = b.stats[e.by]; s.dmg += e.dmg; s.hits++; s.best = Math.max(s.best, e.combo);
           b.combo[e.by] = e.combo; b.comboT[e.by] = 1.4;
@@ -318,7 +318,7 @@ class App {
         case 'guardbreak': b.fx.burst(e.x, e.y, e.z, '#ffd36e', { heavy: true }); this.sfx.play('break'); if (e.who === 0 || e.who === 1) this.callout(e.who === 0 ? 'GUARD BROKEN' : 'GUARD BREAK!'); break;
         case 'blink': b.fx.afterimage(m); this.sfx.play('blink'); b.stats[e.who].blinks++; if (e.breaker) this.callout(e.who === 0 ? 'BREAKOUT!' : 'ESCAPED'); break;
         case 'blast': this.sfx.play('blast'); break;
-        case 'pop': b.fx.burst(e.x, e.y, e.z, '#ffffff', { size: e.apex ? 6 : 1.2, heavy: e.apex, apex: e.apex }); this.sfx.play('pop'); break;
+        case 'pop': b.fx.burst(e.x, e.y, e.z, '#ffffff', { size: e.apex ? 5 : 1.0, heavy: e.apex, apex: e.apex }); this.sfx.play('pop'); break;
         case 'beamCharge': case 'charge': this.sfx.play('charge'); break;
         case 'beam': this.sfx.play('beam'); break;
         case 'dash': this.sfx.play('dash'); { const f = F.f[e.who]; if (f.pos.y < 0.5) b.fx.dust(f.pos.x, f.pos.z); } break;
@@ -404,6 +404,16 @@ class App {
     const me = view.f[0];
     if (me.ascended) this.input.setSpecial('APEX', me.meter >= APEX_COST - 1);
     else this.input.setSpecial('ASCEND', me.meter >= ASCEND_COST);
+    // off-screen rival marker
+    const r = view.f[1], v = new THREE.Vector3(r.pos.x, r.pos.y + 1, r.pos.z).project(this.camera);
+    const behind = v.z > 1, off = behind || Math.abs(v.x) > 0.95 || Math.abs(v.y) > 0.9;
+    const mk = $('#marker'); mk.hidden = !off;
+    if (off) {
+      let x = behind ? -v.x : v.x, y = behind ? -v.y : v.y;
+      const k = 0.88 / Math.max(Math.abs(x), Math.abs(y), 1e-3); if (k < 1 || behind) { x *= k; y *= k; }
+      mk.style.left = ((x + 1) / 2) * 100 + '%'; mk.style.top = ((1 - y) / 2) * 100 + '%';
+      mk.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(x, y)}rad)`;
+    }
     const fl = $('#flash'); fl.style.opacity = b.fx.flash.toFixed(3); fl.style.background = '#' + b.fx.flashColor.getHexString();
   }
 
