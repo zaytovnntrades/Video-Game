@@ -19,9 +19,9 @@ function starTexture() {
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
-const BEAM_VS = 'varying vec2 vUv; varying vec3 vN; varying vec3 vV; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }';
-const BEAM_FS = `uniform vec3 uColor; uniform float uTime; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
-void main(){ float r = 1.0 - abs(dot(normalize(vN), normalize(vV))); float wob = sin(vUv.y * 60.0 - uTime * 40.0) * 0.08 + sin(vUv.y * 23.0 - uTime * 25.0) * 0.06;
+const BEAM_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }';
+const BEAM_FS = `uniform vec3 uColor; uniform float uTime; varying vec2 vUv;
+void main(){ float r = abs(vUv.x - 0.5) * 2.0; /* ribbon: x across, y along */ float wob = sin(vUv.y * 60.0 - uTime * 40.0) * 0.08 + sin(vUv.y * 23.0 - uTime * 25.0) * 0.06;
   float core = smoothstep(0.55 + wob, 0.0, r); float glow = smoothstep(1.0, 0.2, r);
   vec3 c = mix(uColor, vec3(1.0), core); gl_FragColor = vec4(c * 1.5, max(core, glow * 0.6)); }`;
 
@@ -55,7 +55,7 @@ export class FX {
     if (heavy || apex) this.ring(x, y, z, color, apex ? 10 : 3);
     this.sparks(x, y, z, color, heavy ? 22 : 10, heavy ? 16 : 10);
     if (heavy) this.shake = Math.max(this.shake, apex ? 1.0 : 0.45);
-    if (apex) { this.flash = 1; this.flashColor.set(color); }
+    if (apex) { this.flash = Math.max(this.flash, 0.3); this.flashColor.set(color); }
   }
 
   ring(x, y, z, color, size, flat = false) {
@@ -110,16 +110,16 @@ export class FX {
       if (!m) {
         const col = colorOf(p.owner, p.apex);
         m = new THREE.Group();
-        const core = this.sprite('#ffffff', p.radius * 2.2); const halo = this.sprite(col, p.radius * 5.5);
+        const core = this.sprite('#ffffff', Math.min(p.radius * 2.2, 3)); const halo = this.sprite(col, Math.min(p.radius * 5.5, 7));
         m.add(halo, core);
-        if (p.apex) { const sph = new THREE.Mesh(new THREE.SphereGeometry(p.radius * 0.9, 24, 16), new THREE.MeshBasicMaterial({ color: new THREE.Color(col).lerp(new THREE.Color(1, 1, 1), 0.6) })); m.add(sph); }
+        if (p.apex) { const sph = new THREE.Mesh(new THREE.SphereGeometry(p.radius * 0.9, 24, 16), new THREE.MeshBasicMaterial({ color: new THREE.Color(col).lerp(new THREE.Color(1, 1, 1), 0.4), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })); m.add(sph); }
         m.userData = { halo, col, trail: 0 };
         this.scene.add(m); this.proj.set(p.id, m);
       }
       m.position.set(p.pos.x, p.pos.y, p.pos.z);
       m.userData.halo.material.rotation += dt * 4;
-      m.userData.halo.scale.setScalar(p.radius * (5 + Math.sin(time * 30) * 0.6));
-      if ((m.userData.trail += dt) > 0.03) { m.userData.trail = 0; const t = this.sprite(m.userData.col, p.radius * 3); t.position.copy(m.position); this.add(t, 0.2, (o, k) => { o.material.opacity = k * 0.6; o.scale.setScalar(p.radius * 3 * k); }); }
+      m.userData.halo.scale.setScalar(Math.min(p.radius * 5, 6.5) + Math.sin(time * 30) * 0.4);
+      if ((m.userData.trail += dt) > 0.03) { m.userData.trail = 0; const tr = Math.min(p.radius * 3, 3.5); const t = this.sprite(m.userData.col, tr); t.position.copy(m.position); this.add(t, 0.2, (o, k) => { o.material.opacity = k * 0.5; o.scale.setScalar(tr * k); }); }
     }
     for (const [id, m] of this.proj) if (!seen.has(id)) { m.removeFromParent(); m.traverse((o) => o.material?.dispose()); this.proj.delete(id); }
     const seenB = new Set();
@@ -129,9 +129,10 @@ export class FX {
       const col = colorOf(b.owner, b.apex);
       if (!m) {
         const mat = new THREE.ShaderMaterial({ uniforms: { uColor: { value: new THREE.Color(col) }, uTime: { value: 0 } }, vertexShader: BEAM_VS, fragmentShader: BEAM_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-        const geo = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true); geo.translate(0, 0.5, 0); geo.rotateX(Math.PI / 2);
-        // remap uv so x = around, y = along
-        const cyl = new THREE.Mesh(geo, mat);
+        // camera-facing ribbon along +z (rolled toward the camera every frame), 2 units wide
+        const geo = new THREE.PlaneGeometry(2, 1); geo.rotateX(-Math.PI / 2); geo.translate(0, 0, 0.5);
+        const rib = new THREE.Mesh(geo, mat); rib.frustumCulled = false;
+        const cyl = new THREE.Group(); cyl.add(rib);
         const head = this.sprite(col, b.width * 6); const tip = this.sprite('#ffffff', b.width * 3);
         const muzzle = this.sprite(col, b.width * 5);
         m = new THREE.Group(); m.add(cyl, head, tip, muzzle);
@@ -142,11 +143,17 @@ export class FX {
       const u = m.userData;
       m.position.set(b.origin.x, b.origin.y, b.origin.z);
       m.lookAt(b.origin.x + b.dir.x, b.origin.y + b.dir.y, b.origin.z + b.dir.z);
-      const w = b.width * (1 + Math.sin(time * 50) * 0.08);
+      m.updateMatrixWorld();
+      if (this.camPos) { // roll the ribbon(s) to face the camera
+        const c = m.worldToLocal(this.camPos.clone());
+        const roll = Math.atan2(-c.x, c.y);
+        u.cyl.rotation.z = roll; if (u.c2) u.c2.rotation.z = roll;
+      }
+      const w = b.width * (b.apex ? 0.6 : 1) * (1 + Math.sin(time * 50) * 0.08);
       u.cyl.scale.set(w, w, Math.max(0.01, b.len));
       if (u.c2) { const s = Math.sin(time * 12) * w * 0.9, c = Math.cos(time * 12) * w * 0.9; u.cyl.position.set(s, c, 0); u.c2.position.set(-s, -c, 0); u.cyl.scale.set(w * 0.6, w * 0.6, b.len); u.c2.scale.set(w * 0.6, w * 0.6, b.len); }
       u.head.position.set(0, 0, b.len); u.tip.position.set(0, 0, b.len);
-      u.head.scale.setScalar(b.width * (6 + Math.sin(time * 40))); u.muzzle.scale.setScalar(b.width * 5);
+      const hs = Math.min(b.width, 1.6); u.head.scale.setScalar(hs * (4.5 + Math.sin(time * 40))); u.muzzle.scale.setScalar(hs * 3);
       u.mat.uniforms.uTime.value = time;
       if (Math.random() < 0.5) this.sparks(b.origin.x + b.dir.x * b.len, b.origin.y + b.dir.y * b.len, b.origin.z + b.dir.z * b.len, col, 3, 8);
       this.shake = Math.max(this.shake, b.apex ? 0.5 : 0.12);

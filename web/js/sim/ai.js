@@ -47,19 +47,28 @@ export class CPU {
       if (me.blink > 0 && R() < L.blink * 0.5) { tap('guard'); return inp; }
       if (R() < L.guard) { hold('guard', 10 + Math.floor(R() * 14)); return inp; }
     }
+    if (me.state === 'dash' && this.plan === 'rushfollow') { tap('atk'); this.plan = 'rushdown'; return inp; }
+    if (me.state === 'charge') { // keep charging until full enough, unless they close in
+      if (dist > 9 && me.meter < (me.ascended ? 100 : 90)) inp.dash = true;
+      return inp;
+    }
     if (me.state !== 'idle') { // mid-move: keep comboing if we're attacking
       if (me.state === 'attack' && me.move !== 'smash' && R() < L.aggro + 0.2) tap('atk');
       return inp;
     }
 
+    // they're flying away from a launcher: follow up at range
+    if (o.state === 'launched' && dist > 8 && me.meter >= BEAMS[me.spec.moves.beam].cost && R() < 0.5 * L.aggro) { hold('blast', 20); return inp; }
+    if (o.state === 'launched' && dist > 8 && R() < 0.3) { tap('blast'); return inp; }
     // re-plan every so often
     if (--this.planT <= 0) {
       this.planT = L.think + Math.floor(R() * L.think);
       const r = R();
       if (me.ascended && me.meter >= APEX_COST - 1) this.plan = 'apex';
       else if (!me.ascended && me.meter >= ASCEND_COST + 25 && r < 0.3) this.plan = 'ascend';
-      else if (me.meter < 25 && dist > 25 && r < 0.6) this.plan = 'charge';
-      else if (dist > 14 && r < 0.45) this.plan = me.meter >= BEAMS[me.spec.moves.beam].cost && R() < 0.35 ? 'beam' : 'blast';
+      else if (me.ascended && me.meter < 99 && dist > 12 && r < 0.7) this.plan = 'charge';
+      else if (me.meter < 45 && dist > 16 && r < 0.6) this.plan = 'charge';
+      else if (dist > 10 && r < 0.6) this.plan = me.meter >= BEAMS[me.spec.moves.beam].cost && R() < 0.4 ? 'beam' : 'blast';
       else if (r < L.aggro + 0.25) this.plan = 'rushdown';
       else this.plan = 'strafe';
       if (R() < 0.3) this.strafe = -this.strafe;
@@ -67,13 +76,13 @@ export class CPU {
 
     switch (this.plan) {
       case 'apex': case 'ascend': tap('special'); this.planT = 0; break;
-      case 'charge': hold('dash', 40 + Math.floor(R() * 40)); this.planT = 0; break;
+      case 'charge': hold('dash', 14); this.planT = 0; break; // then the 'charge' state keeps holding
       case 'beam': hold('blast', 20); this.planT = 0; break;
       case 'blast': tap('blast'); inp.mx = this.strafe; break;
       case 'rushdown':
         if (dist > 12 && R() < 0.4) { tap('dash'); break; } // dash in
         if (dist < 3.2) {
-          if (me.meter >= 30 && R() < 0.05) { inp.mx = this.strafe; tap('dash'); this.plan = 'rushfollow'; this.planT = 3; break; }
+          if (me.meter >= 30 && R() < 0.12) { inp.mx = this.strafe; tap('dash'); this.plan = 'rushfollow'; this.planT = 30; break; }
           if (o.state === 'guard' && R() < 0.5) { hold('atk', 16); break; }
           tap('atk'); break;
         }

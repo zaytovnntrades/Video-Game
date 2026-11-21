@@ -99,6 +99,6 @@ export function randomSpec(seed) {
   const gold = (c) => c === '#d9a441' || c === '#ffd23f' || c === '#f1c40f';
   if (gold(s.hair.ascend) && gold(s.aura.ascend)) s.aura.ascend = '#c77dff';
   if (gold(s.hair.color) && gold(s.aura.color)) s.aura.color = '#4fc3ff';
-  if (s.hair.style === 0 && (gold(s.hair.color) || gold(s.hair.ascend))) { s.hair.color = gold(s.hair.color) ? '#c0392b' : s.hair.color; s.hair.ascend = gold(s.hair.ascend) ? '#e8f4ff' : s.hair.ascend; } // no golden spiked crowns
+  if ([0, 2, 3].includes(s.hair.style) && (gold(s.hair.color) || gold(s.hair.ascend))) { s.hair.color = gold(s.hair.color) ? '#c0392b' : s.hair.color; s.hair.ascend = gold(s.hair.ascend) ? '#e8f4ff' : s.hair.ascend; } // no golden spiky hair
   return sanitizeSpec(s);
 }

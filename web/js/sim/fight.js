@@ -10,6 +10,7 @@ import { sanitizeSpec } from './spec.js';
 import { mulberry32 } from './rng.js';
 
 const HOLD = 14; // frames: a press held this long becomes the "held" version
+const BUTTONS = ['atk', 'blast', 'guard', 'dash', 'jump', 'special'];
 export function blankInput() { return { mx: 0, my: 0, atk: false, blast: false, guard: false, dash: false, jump: false, special: false }; }
 
 const v3 = (x = 0, y = 0, z = 0) => ({ x, y, z });
@@ -54,6 +55,7 @@ class Fighter {
     this.comboHits = 0; this.calm = 0;
     this.ascended = false;
     this.prev = blankInput();
+    this.latch = {};
     this.hold = { atk: 0, blast: 0, dash: 0, jump: 0 };
     this.pendingDash = false;
     this.guardPress = -999;
@@ -95,7 +97,12 @@ export class Fight {
   step(inputs) {
     this.tick++;
     if (this.over) { for (const f of this.f) this.physics(f, this.other(f)); return; }
-    if (this.hitstop > 0) { this.hitstop--; return; } // impact freeze (inputs wait until it ends)
+    if (this.hitstop > 0) { // impact freeze: remember presses so a tap during it still counts
+      this.hitstop--;
+      for (const f of this.f) { const i = inputs[f.side] || {}; for (const k of BUTTONS) if (i[k]) f.latch[k] = true; }
+      return;
+    }
+    inputs = this.f.map((f) => { const i = { ...blankInput(), ...(inputs[f.side] || {}) }; for (const k of BUTTONS) { if (f.latch[k]) i[k] = true; f.latch[k] = false; } return i; });
     for (const f of this.f) this.control(f, inputs[f.side] || blankInput(), this.other(f));
     for (const f of this.f) this.physics(f, this.other(f));
     this.updateProjectiles();
@@ -132,7 +139,7 @@ export class Fight {
     f.aim = norm(d);
     // passive resources
     if (f.blink < MAX_BLINK && (f.blinkT += DT) >= BLINK_REGEN) { f.blink++; f.blinkT = 0; }
-    if (f.ascended) {
+    if (f.ascended && f.state !== 'apex') {
       f.meter -= ASCEND_DRAIN * DT;
       if (f.meter <= 0) { f.meter = 0; f.ascended = false; this.emit({ t: 'descend', who: f.side }); }
     }
@@ -226,20 +233,21 @@ export class Fight {
       case 'rush': {
         const m = MELEE.rush, rush = RUSHES[f.spec.moves.rush];
         const dist = len(sub(o.chest, f.chest));
-        if (f.t < 22 && dist > 2.0) { // charge in
+        if (f.rushT < 0 && f.t < 22 && dist > 2.0) { // charge in
           f.vel = v3(f.aim.x * 42, f.aim.y * 42, f.aim.z * 42);
           if (f.aim.y > 0.2) f.flying = true;
-          f.rushT = f.t + 1;
         } else {
-          f.vel = v3();
-          const k = f.t - (f.rushT || f.t);
+          if (f.rushT < 0) f.rushT = f.t; // strikes start now
+          // stay on top of the target through the flurry
+          f.vel = dist > 1.8 ? v3(f.aim.x * 20, f.aim.y * 20, f.aim.z * 20) : v3();
+          const k = f.t - f.rushT;
           const hits = m.hits + (rush.extraHit ? 1 : 0);
-          if (k >= 0 && k % m.every === 0 && f.rushHits < hits && dist < 3.2) {
-            f.rushHits++;
+          if (k % m.every === 0 && f.rushHits < hits) {
+            f.rushHits++; // a whiffed strike still counts, so the rush always ends
             const last = f.rushHits === hits;
-            this.applyHit(f, o, { dmg: m.dmg * rush.dmgMul * (last ? 2.4 : 1), stun: last ? 34 : m.stun, kb: last ? [30, 10] : m.kb, launch: last, meter: 0, kind: 'rush' });
+            if (dist < 3.2) this.applyHit(f, o, { dmg: m.dmg * rush.dmgMul * (last ? 2.4 : 1), stun: last ? 34 : m.stun, kb: last ? [30, 10] : m.kb, launch: last, meter: 0, kind: 'rush', noBlink: f.rushHits > 1 });
           }
-          if (k > hits * m.every + m.recovery || dist >= 3.2 && f.t > 22 + 6) f.set('idle');
+          if (k >= (hits - 1) * m.every + m.recovery) f.set('idle');
         }
         break;
       }
@@ -269,7 +277,7 @@ export class Fight {
       case 'apex': {
         f.vel = v3();
         if (f.t === 40) this.fireApex(f, o);
-        if (f.t >= 70) f.set('idle');
+        if (f.t >= 70) { f.set('idle'); f.ascended = false; this.emit({ t: 'descend', who: f.side, quiet: true }); } // the finisher spends the transformation
         break;
       }
       default: if (f.t > 60) f.set('idle');
@@ -287,7 +295,7 @@ export class Fight {
     f.set('attack');
     this.emit({ t: 'swing', who: f.side, move });
   }
-  startRush(f) { f.set('rush'); f.rushHits = 0; f.rushT = 0; this.emit({ t: 'rush', who: f.side }); }
+  startRush(f) { f.set('rush'); f.rushHits = 0; f.rushT = -1; this.emit({ t: 'rush', who: f.side }); }
 
   fireBlast(f, o, B) {
     if (f.cd > 0 || f.meter < B.cost) return;
@@ -330,7 +338,10 @@ export class Fight {
   }
 
   // ---------------------------------------------------------------- hits
-  invulnerable(f) { return ['down', 'blinking', 'ascending', 'ko'].includes(f.state) || (f.state === 'apex' && f.t < 40); }
+  invulnerable(f) {
+    if (f.comboHits >= MAX_COMBO_HITS && (f.state === 'launched' || f.state === 'stun')) return true; // combo cap: no infinites
+    return ['down', 'blinking', 'ascending', 'ko'].includes(f.state) || (f.state === 'apex' && f.t < 40);
+  }
   canBlink(f) { return f.blink > 0 && this.tick - f.guardPress <= BLINK_WINDOW && ['idle', 'guard', 'charge', 'dash', 'blastrec', 'dashin'].includes(f.state); }
 
   blinkBehind(f, a, breaker = false) {
@@ -364,6 +375,7 @@ export class Fight {
       this.emit({ t: 'guard', who: d.side, x: pos.x, y: pos.y, z: pos.z });
       return 'guard';
     }
+    if (d.state !== 'stun' && d.state !== 'launched') d.comboHits = 0; // a fresh hit starts a fresh combo
     const scale = Math.max(0.4, 1 - SCALING * d.comboHits);
     const dmg = h.dmg * scale * (h.kind === 'melee' || h.kind === 'rush' ? a.style.melee * (a.ascended ? 1.2 : 1) : 1);
     d.comboHits++;
@@ -463,6 +475,7 @@ export class Fight {
       const impact = -f.vel.y;
       f.pos.y = 0;
       if (f.state === 'launched' && (impact > 12 || Math.hypot(f.vel.x, f.vel.z) > 6)) { f.set('down'); this.emit({ t: 'land', who: f.side, hard: true, x: f.pos.x, z: f.pos.z }); }
+      else if (f.state === 'launched') { f.set('stun'); f.stun = 12; }
       else if (f.flying && f.vel.y < 0) { this.emit({ t: 'land', who: f.side, hard: false, x: f.pos.x, z: f.pos.z }); }
       if (f.vel.y < 0) f.vel.y = 0;
       f.flying = false; f.dropping = false;

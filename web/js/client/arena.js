@@ -4,6 +4,7 @@
 import * as THREE from '../../vendor/three/three.module.js';
 import { ARENA } from '../sim/data.js';
 import { mulberry32 } from '../sim/rng.js';
+import { bakeStatic } from './merge.js';
 
 const SKY_VS = 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }';
 const SKY_FS = `uniform vec3 uTop; uniform vec3 uMid; uniform vec3 uLow; uniform vec3 uSun; uniform vec3 uSunDir; varying vec3 vP;
@@ -58,15 +59,18 @@ export class Arena {
     this.group.add(ground);
     // boundary ring of cliffs + distant mountains
     const rockMat = toon(S.rock), topMat = toon(S.rockTop);
+    const statics = new THREE.Group(); // everything that never moves, baked below
+    this.statics = statics;
     for (let i = 0; i < 46; i++) {
       const a = (i / 46) * Math.PI * 2 + R() * 0.05, d = ARENA.radius + 18 + R() * 25, h = 25 + R() * 45, r = 14 + R() * 12;
       this.rock(a, d, h, r, rockMat, topMat, R);
     }
     for (let i = 0; i < 18; i++) {
       const a = (i / 18) * Math.PI * 2 + R(), d = 330 + R() * 120, h = 90 + R() * 120;
-      const m = new THREE.Mesh(new THREE.ConeGeometry(70 + R() * 60, h, 7), new THREE.MeshBasicMaterial({ color: new THREE.Color(S.fog).lerp(new THREE.Color(S.top), 0.35), fog: true }));
+      this.mountainMat ||= new THREE.MeshBasicMaterial({ color: new THREE.Color(S.fog).lerp(new THREE.Color(S.top), 0.35), fog: true });
+      const m = new THREE.Mesh(new THREE.ConeGeometry(70 + R() * 60, h, 7), this.mountainMat);
       m.position.set(Math.cos(a) * d, h / 2 - 5, Math.sin(a) * d);
-      this.group.add(m);
+      statics.add(m);
     }
     // the sim's pillars
     for (const p of pillars) {
@@ -77,20 +81,24 @@ export class Arena {
     const boulder = new THREE.DodecahedronGeometry(1, 0);
     for (let i = 0; i < 40; i++) {
       const a = R() * Math.PI * 2, d = 10 + R() * (ARENA.radius - 10);
-      const m = new THREE.Mesh(boulder, rockMat); const s = 0.4 + R() * 1.4;
+      const m = new THREE.Mesh(boulder, rockMat); const s = 0.3 + R() * 0.7; // low enough never to hide a fighter
       m.position.set(Math.cos(a) * d, s * 0.4, Math.sin(a) * d); m.scale.set(s, s * 0.7, s); m.rotation.set(R(), R() * 6, R());
-      m.castShadow = true; this.group.add(m);
+      m.castShadow = true; statics.add(m);
     }
+    bakeStatic(statics, this.group);
     // clouds
     this.clouds = [];
+    const cloudGroup = new THREE.Group();
     const cloudMat = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: grad, transparent: true, opacity: 0.92 });
     for (let i = 0; i < 16; i++) {
       const c = new THREE.Group();
       for (let k = 0; k < 5; k++) { const p = new THREE.Mesh(new THREE.SphereGeometry(6 + R() * 6, 10, 8), cloudMat); p.position.set(k * 8 - 16, R() * 3, R() * 6); p.scale.y = 0.6; c.add(p); }
       const a = R() * Math.PI * 2, d = 60 + R() * 250;
       c.position.set(Math.cos(a) * d, 85 + R() * 60, Math.sin(a) * d); c.rotation.y = R() * 6;
-      this.group.add(c); this.clouds.push(c);
+      cloudGroup.add(c);
     }
+    this.cloudLayer = new THREE.Group(); this.group.add(this.cloudLayer);
+    bakeStatic(cloudGroup, this.cloudLayer, { shadow: false }); // all clouds drift together
     this.craters = [];
     this.craterGeo = new THREE.CircleGeometry(1, 20);
     this.craterMat = new THREE.MeshBasicMaterial({ color: 0x3b2f22, transparent: true, opacity: 0.45, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
@@ -109,7 +117,7 @@ export class Arena {
     const top = new THREE.Mesh(new THREE.CylinderGeometry(r * (1 - layers * 0.14) * 1.04, r * (1 - layers * 0.14), 1.2, 9), topMat);
     top.position.y = y + 0.4; g.add(top);
     g.position.set(Math.cos(a) * d, 0, Math.sin(a) * d);
-    this.group.add(g);
+    this.statics.add(g);
     return g;
   }
 
@@ -121,7 +129,7 @@ export class Arena {
   }
 
   update(dt, focus) {
-    for (const c of this.clouds) c.position.x += dt * 1.5;
+    this.cloudLayer.position.x += dt * 1.5;
     if (focus) { // keep the shadow box around the action
       this.sun.target.position.set(focus.x, 0, focus.z);
       this.sun.position.set(focus.x + 30, 50, focus.z + 21);

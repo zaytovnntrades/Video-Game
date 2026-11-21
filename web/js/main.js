@@ -324,9 +324,9 @@ class App {
         case 'dash': this.sfx.play('dash'); { const f = F.f[e.who]; if (f.pos.y < 0.5) b.fx.dust(f.pos.x, f.pos.z); } break;
         case 'ascend': this.sfx.play('ascend'); if (e.who === 0) this.callout('ASCEND!'); break;
         case 'ascended': { const f = F.f[e.who]; b.fx.burst(f.pos.x, f.pos.y + 1, f.pos.z, f.spec.aura.ascend, { heavy: true, apex: true, size: 3 }); b.fx.dust(f.pos.x, f.pos.z, true); break; }
-        case 'descend': if (e.who === 0) this.callout('Aura faded'); break;
+        case 'descend': if (e.who === 0 && !e.quiet) this.callout('Aura faded'); break;
         case 'apexStart': this.sfx.play('apex'); this.banner(APEXES[F.f[e.who].spec.moves.apex].name.toUpperCase(), 1.4); break;
-        case 'apex': b.fx.flash = 0.8; b.fx.flashColor.set(this.auraColor(e.who, true)); b.fx.shake = 1; break;
+        case 'apex': b.fx.flash = 0.4; b.fx.flashColor.set(this.auraColor(e.who, true)); b.fx.shake = 1; break;
         case 'land': if (e.hard) { b.fx.dust(e.x, e.z, true); b.arena.crater(e.x, e.z, 2.2); this.sfx.play('land'); } else b.fx.dust(e.x, e.z); break;
         case 'crash': b.fx.burst(e.x, e.y, e.z, '#e8d2b0', { heavy: true, size: 2.5 }); this.sfx.play('heavy'); break;
         case 'ko': this.sfx.play('ko'); this.banner('K.O.!', 2.2); b.slow = 1.6; break;

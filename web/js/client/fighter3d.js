@@ -4,6 +4,7 @@
 import * as THREE from '../../vendor/three/three.module.js';
 import { OPTIONS } from '../sim/spec.js';
 import { MELEE } from '../sim/data.js';
+import { compactChildren } from './merge.js';
 
 // ---------------------------------------------------------------- shared materials
 let GRADIENT = null;
@@ -222,11 +223,13 @@ export class FighterModel {
     if (O.accessory === 1) { // scarf
       this.part(new THREE.TorusGeometry(0.085, 0.04, 8, 16), O.accessoryColor, J.neck, { pos: [0, 0.0, 0], rot: [Math.PI / 2, 0, 0] });
       this.scarf = this.part(new THREE.BoxGeometry(0.08, 0.42, 0.02), O.accessoryColor, J.neck, { pos: [0.05, -0.18, -0.12], rot: [0.6, 0, 0.1] });
+      this.scarf.userData.keep = true; // animated
     }
     if (O.accessory === 2) { // cape
       const cg = new THREE.PlaneGeometry(0.5 * sw, 0.9, 1, 4); cg.translate(0, -0.45, 0);
       const cm = this.mat(O.accessoryColor); cm.side = THREE.DoubleSide;
       this.cape = this.part(cg, O.accessoryColor, J.chest, { pos: [0, 0.17, -0.14 * bw], outline: false });
+      this.cape.userData.keep = true; // animated
     }
     // arms
     const sleeve = { 'Wrap Gi': 'short', 'Sleeveless Gi': 'none', Jacket: 'long', Vest: 'none', Tank: 'none', Hoodie: 'long', Armor: 'short' }[top];
@@ -288,6 +291,8 @@ export class FighterModel {
     sh.rotation.x = -Math.PI / 2;
     this.shadow = sh;
     this.mats.set('#shadow', sh.material);
+    // bake each joint's parts into one mesh per material (+1 outline): ~4x fewer draw calls
+    for (const j of [...Object.values(J), this.hair]) compactChildren(j, OUTLINE);
     this.allToon = [...this.mats.values()].filter((m) => m.isMeshToonMaterial);
     // remember the rest rotations
     this.rest = {};

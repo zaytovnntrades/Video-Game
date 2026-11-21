@@ -177,3 +177,46 @@ test('specs are sanitized; random specs are valid and avoid gold-on-gold', () =>
     assert.ok(Object.hasOwn(BLASTS, r.moves.blast));
   }
 });
+
+test('rush special from point blank strikes at its rhythm and always ends', () => {
+  for (const guard of [false, true]) {
+    const f = new Fight({ specs: [defaultSpec(), defaultSpec()], seed: 3 });
+    close(f, 1.5);
+    f.f[0].meter = 60;
+    // stick-dash sideways, then attack during the dash
+    run(f, 3, (i) => I({ mx: 1, dash: i === 0 }), () => I({ guard }));
+    run(f, 1, () => I({ atk: true }), () => I({ guard }));
+    assert.equal(f.f[0].state, 'rush');
+    let t = 0;
+    while (f.f[0].state === 'rush' && t < 200) { f.step([I(), I({ guard })]); t++; }
+    assert.ok(t < 100, `rush lasted ${t} ticks (guard ${guard})`);
+    const ticks = f.events.filter((e) => (e.t === 'hit' || e.t === 'guard') && (e.by === 0 || e.who === 1));
+    assert.ok(ticks.length >= 4, `rush connected ${ticks.length} times (guard ${guard})`);
+  }
+});
+
+test('combo cap holds even when the attacker chases and mashes', () => {
+  for (const guard of [false, true]) {
+    const f = new Fight({ specs: [defaultSpec(), defaultSpec()], seed: 4 });
+    close(f);
+    let free = 0, maxCombo = 0;
+    for (let i = 0; i < 1500 && !f.over; i++) {
+      f.step([I({ atk: i % 3 === 0, my: 1, dash: i % 50 === 0 }), I({ guard })]);
+      if (['idle', 'guard'].includes(f.f[1].state)) free++;
+      for (const e of f.events) if (e.t === 'hit' && e.by === 0) maxCombo = Math.max(maxCombo, e.combo);
+      f.events.length = 0;
+      f.f[1].hp = f.f[1].maxHp; // keep the test running
+    }
+    assert.ok(maxCombo <= MAX_COMBO_HITS, `combo reached ${maxCombo}`);
+    // a guarding defender blocks most of it; a passive one still gets back up between combos
+    assert.ok(free > (guard ? 300 : 20), `defender only had ${free} actionable ticks (guard ${guard})`);
+  }
+});
+
+test('a quick tap during hit-stop is not lost', () => {
+  const f = new Fight({ specs: [defaultSpec(), defaultSpec()], seed: 3 });
+  close(f);
+  f.hitstop = 9;
+  run(f, 14, (i) => I({ atk: i >= 2 && i < 5 }));
+  assert.ok(f.events.some((e) => e.t === 'swing' && e.who === 0), 'the tap became an attack');
+});

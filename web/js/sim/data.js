@@ -8,7 +8,7 @@ export const DT = 1 / TICK;
 
 export const ARENA = { radius: 140, ceiling: 70 };
 export const BODY = { radius: 0.6, height: 1.8 }; // hit volume: identical for every fighter
-export const MAX_HP = 1000;
+export const MAX_HP = 1400;
 export const MAX_METER = 100;
 export const MAX_BLINK = 3;
 export const ROUND_TIME = 99;
