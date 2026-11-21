@@ -285,6 +285,12 @@ class App {
 
   // ---------------------------------------------------------------- battle
   startBattle() {
+    if (TEST) return this.buildBattle();
+    this.toast('Loading arena…'); // building terrain takes a moment; let the message paint first
+    requestAnimationFrame(() => requestAnimationFrame(() => this.buildBattle()));
+  }
+
+  buildBattle() {
     if (this.battle) this.endBattle();
     const p = this.pick;
     const me = this.fighterById(p.me).spec;
