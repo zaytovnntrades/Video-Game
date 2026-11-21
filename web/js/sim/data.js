@@ -15,9 +15,9 @@ export const ROUND_TIME = 99;
 
 // Fighting styles: balanced sidegrades (every style totals the same budget).
 export const STYLES = {
-  brawler: { name: 'Brawler', blurb: 'Hits hard up close, takes hits well.', melee: 1.15, blast: 0.9, speed: 0.95, hp: 1.08, regen: 0.95 },
+  brawler: { name: 'Brawler', blurb: 'Hits hard up close, takes hits well.', melee: 1.1, blast: 0.9, speed: 0.95, hp: 1.08, regen: 0.95 },
   striker: { name: 'Striker', blurb: 'Fast on its feet, long combos.', melee: 1.0, blast: 0.95, speed: 1.12, hp: 0.97, regen: 1.0 },
-  mystic: { name: 'Mystic', blurb: 'Strong blasts, quick aura recovery.', melee: 0.9, blast: 1.18, speed: 1.0, hp: 0.95, regen: 1.15 },
+  mystic: { name: 'Mystic', blurb: 'Strong blasts, quick aura recovery.', melee: 0.95, blast: 1.18, speed: 1.0, hp: 0.98, regen: 1.15 },
 };
 export const STYLE_KEYS = Object.keys(STYLES);
 

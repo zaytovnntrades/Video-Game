@@ -175,6 +175,9 @@ test('specs are sanitized; random specs are valid and avoid gold-on-gold', () =>
     const r = randomSpec(s);
     assert.deepEqual(sanitizeSpec(r), r);
     assert.ok(Object.hasOwn(BLASTS, r.moves.blast));
+    const gold = (c) => ['#d9a441', '#ffd23f', '#f1c40f'].includes(c);
+    assert.ok(!(gold(r.hair.color) && gold(r.aura.color)) && !(gold(r.hair.ascend) && gold(r.aura.ascend)), `seed ${s}: gold hair with gold aura`);
+    assert.ok(!([0, 2, 3].includes(r.hair.style) && (gold(r.hair.color) || gold(r.hair.ascend))), `seed ${s}: golden spiky hair`);
   }
 });
 
@@ -219,4 +222,12 @@ test('a quick tap during hit-stop is not lost', () => {
   f.hitstop = 9;
   run(f, 14, (i) => I({ atk: i >= 2 && i < 5 }));
   assert.ok(f.events.some((e) => e.t === 'swing' && e.who === 0), 'the tap became an attack');
+});
+
+test('holding BLAST through a busy moment still fires the beam once free', () => {
+  const f = new Fight({ specs: [defaultSpec(), defaultSpec()], seed: 3 });
+  f.f[0].meter = 80;
+  f.f[0].set('stun'); f.f[0].stun = 20; // busy when the hold matures
+  run(f, 80, (i) => I({ blast: i < 40 }));
+  assert.equal(f.events.filter((e) => e.t === 'beam' && e.who === 0).length, 1);
 });

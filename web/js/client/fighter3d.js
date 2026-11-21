@@ -384,11 +384,15 @@ export class FighterModel {
         break;
     }
     this.hairBase = color;
+    this.hairMat = this.mat(color);
   }
 
   setColors(ascended) { // ascended swaps hair + aura colours
     const hc = ascended ? this.spec.hair.ascend : this.spec.hair.color;
-    this.hair.traverse((o) => { if (o.isMesh && o.material !== OUTLINE && o.material.isMeshToonMaterial) { if (o.material.userData.hair !== hc) { o.material = this.mat(hc, { emissive: ascended }); } } });
+    const next = this.mat(hc, { emissive: ascended });
+    // only the hair itself changes colour (not a scalp, band or bun tie)
+    this.hair.traverse((o) => { if (o.isMesh && o.material === this.hairMat) o.material = next; });
+    this.hairMat = next;
     this.aura.material.uniforms.uColor.value.set(ascended ? this.spec.aura.ascend : this.spec.aura.color);
     this.allToon = [...this.mats.values()].filter((m) => m.isMeshToonMaterial);
   }

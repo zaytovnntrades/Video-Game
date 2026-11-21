@@ -56,6 +56,7 @@ class Fighter {
     this.ascended = false;
     this.prev = blankInput();
     this.latch = {};
+    this.used = {}; // a long hold fires its move once, even if it matures while busy
     this.hold = { atk: 0, blast: 0, dash: 0, jump: 0 };
     this.pendingDash = false;
     this.guardPress = -999;
@@ -129,7 +130,7 @@ export class Fight {
     const press = (k) => inp[k] && !f.prev[k];
     const release = (k) => !inp[k] && f.prev[k];
     const heldFor = {};
-    for (const k of ['atk', 'blast', 'dash', 'jump']) { heldFor[k] = f.hold[k]; f.hold[k] = inp[k] ? f.hold[k] + 1 : 0; }
+    for (const k of ['atk', 'blast', 'dash', 'jump']) { heldFor[k] = f.hold[k]; f.hold[k] = inp[k] ? f.hold[k] + 1 : 0; if (!inp[k]) f.used[k] = false; }
     if (press('guard')) f.guardPress = this.tick;
     if (f.cd > 0) f.cd--;
     // facing: always locked on the rival
@@ -165,10 +166,10 @@ export class Fight {
         }
         // attack: tap = combo (lunging in from range), hold = guard-breaking smash
         if (heldFor.atk > 0 && release('atk') && heldFor.atk < HOLD) { this.startAttack(f, o, 'combo'); break; }
-        if (inp.atk && f.hold.atk === HOLD) { this.startAttack(f, o, 'smash'); break; }
+        if (inp.atk && f.hold.atk >= HOLD && !f.used.atk) { f.used.atk = true; this.startAttack(f, o, 'smash'); break; }
         // blast: tap = projectile, hold = beam
         if (heldFor.blast > 0 && release('blast') && heldFor.blast < HOLD) { this.fireBlast(f, o, blast); break; }
-        if (inp.blast && f.hold.blast === HOLD && f.meter >= beam.cost) { f.set('beamcharge'); f.vel = v3(); this.emit({ t: 'beamCharge', who: f.side }); break; }
+        if (inp.blast && f.hold.blast >= HOLD && !f.used.blast && f.meter >= beam.cost) { f.used.blast = true; f.set('beamcharge'); f.vel = v3(); this.emit({ t: 'beamCharge', who: f.side }); break; }
         // dash with the stick, dash in (tap, no stick) or charge aura (hold, no stick)
         if (press('dash')) {
           if (stick > 0.3) {
