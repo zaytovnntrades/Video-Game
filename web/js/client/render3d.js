@@ -488,12 +488,22 @@ export class Renderer3D {
       const o = SH * (d / back) + 4; // shoulder offset grows with distance, plus a margin
       const cx = px - fx * d + rx * o, cz = pz - fz * d + rz * o;
       const t = tileAt(this.map, Math.floor(cx / TILE), Math.floor(cz / TILE));
-      let blocked = t === T.BUILD || t === T.WALL || t === T.TREE;
-      // street-lamp poles too, so a pole never fills the frame
-      if (!blocked && this.mapScene.lamps) for (const [lx, lz] of this.mapScene.lamps) if (Math.abs(lx - cx) < 6 && Math.abs(lz - cz) < 6) { blocked = true; break; }
-      if (blocked) { dist = Math.max(8, d - 7); break; }
+      if (t === T.BUILD || t === T.WALL || t === T.TREE) { dist = Math.max(8, d - 7); break; }
     }
-    const shoulder = SH * Math.min(1, dist / back);
+    let shoulder = SH * Math.min(1, dist / back);
+    // A street-lamp pole between the camera and the hero would fill the frame:
+    // switch to the other shoulder (like a camera operator would) if that clears it.
+    const poleBlocks = (sh) => {
+      const ax = px - fx * dist + rx * sh, az = pz - fz * dist + rz * sh;
+      for (const [lx, lz] of this.mapScene.lamps || []) {
+        const vx = px - ax, vz = pz - az, L = vx * vx + vz * vz || 1;
+        const u = ((lx - ax) * vx + (lz - az) * vz) / L;
+        if (u < 0.05 || u > 0.85) continue;
+        if (Math.hypot(ax + vx * u - lx, az + vz * u - lz) < 3.5) return true;
+      }
+      return false;
+    };
+    if (poleBlocks(shoulder) && !poleBlocks(-shoulder * 1.6)) shoulder = -shoulder * 1.6;
     const sx = rx * shoulder, sz = rz * shoulder;
     const wx = px - fx * dist + sx, wy = up * (0.55 + 0.45 * (dist / back)), wz = pz - fz * dist + sz;
     const S = this.street;
