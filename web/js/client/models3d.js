@@ -48,142 +48,8 @@ function mesh(g, m, x = 0, y = 0, z = 0) {
 export function buildCharacter(look) { return buildHuman(look, { lod: 'high' }); }
 export function poseCharacter(o, state) { poseHuman(o, state); }
 
-// ---------- companion creatures ----------
-export function buildCreature(type, evolved) {
-  const root = new THREE.Group();
-  const b = new THREE.Group();
-  root.add(b);
-  const add = (o) => { b.add(o); return o; };
-  const dark = M('#1d1a2b', { rough: 0.3 }), white = M('#ffffff', { rough: 0.2 });
-  const eyes = (x, y, zs, r = 0.95) => { for (const z of zs) { add(mesh(G.sphere(r, 10, 8), dark, x, y, z)); add(mesh(G.sphere(r * 0.4, 6, 4), white, x + r * 0.7, y + r * 0.4, z)); } };
-  if (type === 'cindkit') {
-    const fur = M(evolved ? '#e0632a' : '#f28a3a', { rough: 0.8 }), belly = M('#ffe1b0', { rough: 0.8 });
-    add(mesh(G.sphere(6, 18, 14), fur, 0, 7, 0)).scale.set(1.25, 1, 0.95);
-    add(mesh(G.sphere(4.2, 14, 10), belly, 2.6, 6.2, 0)).scale.set(0.8, 1, 1.05);
-    add(mesh(G.sphere(5.2, 18, 14), fur, 5.8, 13, 0));
-    for (const z of [-2.7, 2.7]) { const e = add(mesh(G.cone(1.9, 4.2), fur, 5.2, 18.4, z)); e.rotation.x = z > 0 ? 0.25 : -0.25; }
-    eyes(10.2, 13.8, [-1.9, 1.9]);
-    add(mesh(G.sphere(0.6, 6, 4), M('#ff8a9a'), 10.9, 12.3, 0));
-    for (const [x, z] of [[3.5, 3.2], [3.5, -3.2], [-3.5, 3.2], [-3.5, -3.2]]) add(mesh(G.cyl(1.4, 1.4, 4, 8), fur, x, 2, z));
-    // striped tail curling up
-    const t1 = add(mesh(G.capsule(1.4, 5), fur, -8, 9, 0)); t1.rotation.z = 0.9;
-    const t2 = add(mesh(G.capsule(1.3, 4), fur, -10.2, 13.2, 0)); t2.rotation.z = -0.2;
-    add(mesh(G.torus(1.5, 0.45), M('#8a3b12'), -9.2, 10.6, 0)).rotation.y = Math.PI / 2;
-    // ember tuft on the head (glows)
-    add(mesh(G.cone(1.5, 3.6), M('#ffb02a', { emissive: 2.2 }), 5.6, 19.4, 0));
-    add(mesh(G.sphere(0.7, 6, 4), M('#ff4a1f', { emissive: 3 }), 5.6, 21.4, 0));
-    if (evolved) {
-      for (let i = 0; i < 9; i++) {
-        const a = (i / 9) * Math.PI * 2;
-        const c = add(mesh(G.cone(1.6, 4.6), M('#ff6a1f', { emissive: 1.6 }), 4.2 + Math.cos(a) * 0.5, 13 + Math.sin(a) * 5.4, Math.cos(a) * 5.4));
-        c.rotation.set(a, 0, 0);
-      }
-    }
-  } else if (type === 'puddlo') {
-    const skin = M(evolved ? '#2f7fd6' : '#58a9ef', { rough: 0.25, metal: 0.05 }), belly = M('#d4f1ff', { rough: 0.4 });
-    add(mesh(G.sphere(7.5, 20, 16), skin, 0, 7, 0)).scale.set(1, 0.88, 1);
-    add(mesh(G.sphere(5, 16, 12), belly, 3.6, 6, 0)).scale.set(0.7, 1, 1.05);
-    for (const z of [-2.6, 2.6]) { add(mesh(G.sphere(1.7, 12, 10), white, 6.2, 9.4, z)); add(mesh(G.sphere(0.95, 10, 8), dark, 7.5, 9.4, z)); }
-    add(mesh(G.cyl(0.4, 0.4, 4.2, 6), M('#2a5b9a'), 0, 14.2, 0));
-    add(mesh(G.sphere(1.9, 12, 10), M('#bff0ff', { emissive: 0.9, rough: 0.1 }), 0, 17.4, 0));
-    for (const z of [-4.3, 4.3]) add(mesh(G.sphere(0.9, 8, 6), M('#bff0ff', { rough: 0.2 }), 5.6, 7, z));
-    for (const z of [-3.6, 3.6]) add(mesh(G.sphere(2, 10, 8), skin, 2, 1.3, z));
-    if (evolved) {
-      add(mesh(G.sphere(6.6, 18, 12), M('#7fc4f0', { rough: 0.3, metal: 0.2 }), -3.2, 10.6, 0)).scale.set(0.9, 0.75, 1.05);
-      for (const z of [-8.2, 8.2]) add(mesh(G.sphere(2.5, 10, 8), skin, 1, 8, z));
-    }
-  } else { // thornub
-    const leaf = M(evolved ? '#3f9a4a' : '#6cc46a', { rough: 0.6 }), belly = M('#e9f7c9', { rough: 0.7 });
-    add(mesh(G.sphere(7, 20, 16), leaf, 0, 7.2, 0)).scale.set(1, 0.95, 1);
-    add(mesh(G.sphere(4.8, 14, 10), belly, 3.6, 6.2, 0)).scale.set(0.7, 1, 1.05);
-    eyes(6.5, 9, [-2.4, 2.4], 1.05);
-    for (const z of [-4, 4]) add(mesh(G.sphere(0.9, 8, 6), M('#f7a8c4'), 6.1, 7.2, z));
-    add(mesh(G.cyl(0.5, 0.5, 3.2, 6), M('#3d8b3d'), 0, 14.5, 0));
-    const l1 = add(mesh(G.sphere(2.6, 12, 8), M('#8fe07a', { rough: 0.5 }), -2.1, 16.2, 0)); l1.scale.set(1.6, 0.35, 0.8); l1.rotation.z = 0.5;
-    const l2 = add(mesh(G.sphere(2.6, 12, 8), M('#8fe07a', { rough: 0.5 }), 2.1, 16.6, 0)); l2.scale.set(1.6, 0.35, 0.8); l2.rotation.z = -0.5;
-    for (const z of [-3.4, 3.4]) add(mesh(G.sphere(2, 10, 8), leaf, 2, 1.3, z));
-    if (evolved) {
-      const petal = M('#ff7fae', { emissive: 0.5, rough: 0.5 });
-      for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; add(mesh(G.sphere(1.8, 10, 8), petal, Math.cos(a) * 2.4, 19, Math.sin(a) * 2.4)).scale.set(1, 0.5, 1); }
-      add(mesh(G.sphere(1.2, 8, 6), M('#ffd23f', { emissive: 1.5 }), 0, 19.6, 0));
-      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; const th = add(mesh(G.cone(1.1, 3.2), M('#8d6e4a'), Math.cos(a) * 6.8, 7, Math.sin(a) * 6.8)); th.rotation.set(Math.sin(a) * 1.4, 0, -Math.cos(a) * 1.4); }
-    }
-  }
-  root.scale.setScalar(evolved ? 1.45 : 1);
-  root.userData = { body: b };
-  return root;
-}
-
-export function poseCreature(o, { phase, moving, t }) {
-  o.userData.body.position.y = moving ? Math.abs(Math.sin(phase * 0.8)) * 2.4 : Math.sin(t * 3) * 0.5;
-}
-
-// ---------- enemies ----------
-export function buildEnemy(type, boss) {
-  const root = new THREE.Group();
-  const b = new THREE.Group();
-  root.add(b);
-  const add = (o) => { b.add(o); return o; };
-  const extra = [];
-  if (type === 'zombie') { // Glitch: corrupted ghoul with orbiting glitch cubes
-    const body = M('#8e6bd1', { rough: 0.6 });
-    const torso = add(mesh(G.capsule(6, 7, 14), body, 0, 11, 0)); torso.rotation.z = -0.18;
-    for (const z of [-2.3, 2.3]) add(mesh(G.sphere(1.3, 8, 6), M('#ff3a5a', { emissive: 3 }), 5.2, 16.5, z));
-    add(mesh(G.box(1.2, 1, 4.5), M('#3b2a5c'), 5.6, 12.8, 0));
-    for (const z of [-6.5, 6.5]) { const a = add(mesh(G.capsule(1.7, 7), body, 4, 12.5, z)); a.rotation.z = 1.35; }
-    for (const z of [-2.8, 2.8]) add(mesh(G.capsule(1.9, 3), M('#4b3a73'), 0, 2.6, z));
-    for (let i = 0; i < 4; i++) {
-      const c = mesh(G.box(1.6, 1.6, 1.6), M(i % 2 ? '#2df0ff' : '#ff3ad1', { emissive: 2.5 }));
-      c.castShadow = false;
-      b.add(c);
-      extra.push(c);
-    }
-  } else if (type === 'runner') { // Dasher: little horned imp
-    const red = M('#e5533d', { rough: 0.5 });
-    add(mesh(G.sphere(5.6, 16, 12), red, 0, 7.2, 0));
-    for (const z of [-2.6, 2.6]) { const h = add(mesh(G.cone(1.2, 4.4), M('#ffe0a3', { rough: 0.4 }), 1, 12.6, z)); h.rotation.x = z > 0 ? 0.4 : -0.4; }
-    for (const z of [-1.9, 1.9]) add(mesh(G.sphere(1.05, 8, 6), M('#ffee55', { emissive: 3 }), 4.9, 8.6, z));
-    const tail = add(mesh(G.capsule(0.7, 6), red, -6.5, 6, 0)); tail.rotation.z = 1.1;
-    add(mesh(G.cone(1.4, 2.6), red, -9.6, 7.4, 0)).rotation.z = 1.1;
-    for (const z of [-2.5, 2.5]) add(mesh(G.sphere(1.7, 8, 6), M('#5c1a12'), 1, 1.4, z));
-  } else if (type === 'brute') { // Brute: mossy stone golem
-    const stone = M(boss ? '#8a7a9e' : '#8d949c', { rough: 0.95, flat: true });
-    const moss = M('#6aa84f', { rough: 0.9, flat: true });
-    add(mesh(G.box(17, 17, 19), stone, 0, 19, 0));
-    add(mesh(G.box(11, 9, 11), stone, 3, 32, 0));
-    const eyeM = M(boss ? '#ff3030' : '#ffb03a', { emissive: 3 });
-    for (const z of [-2.6, 2.6]) add(mesh(G.box(1.2, 1.6, 2.4), eyeM, 8.7, 33, z));
-    for (const z of [-12, 12]) { add(mesh(G.box(6.5, 18, 6.5), stone, 1, 17, z)); add(mesh(G.box(7, 4, 7), moss, 0, 26.5, z)); }
-    for (const z of [-4.6, 4.6]) add(mesh(G.box(7, 10, 7), stone, 0, 5, z));
-    add(mesh(G.box(9, 3, 9), moss, -2, 37.6, 0));
-    if (boss) for (const z of [-3.5, 0, 3.5]) add(mesh(G.cone(1.6, 5, 6), M('#ffd23f', { metal: 0.9, rough: 0.25, emissive: 0.5 }), 3, 38.5, z));
-    root.scale.setScalar(boss ? 1.3 : 1);
-  } else { // Spitter: toxic slug
-    const slime = M('#7bc043', { rough: 0.2, metal: 0.05 });
-    const body = add(mesh(G.capsule(5, 12, 14), slime, -1, 5, 0)); body.rotation.z = Math.PI / 2;
-    add(mesh(G.sphere(4.6, 14, 10), M('#94d860', { rough: 0.25 }), 6, 7, 0));
-    for (const z of [-2.2, 2.2]) {
-      const st = add(mesh(G.cyl(0.6, 0.6, 6.5, 6), slime, 6.6, 12.6, z)); st.rotation.x = z > 0 ? 0.25 : -0.25;
-      add(mesh(G.sphere(1.3, 8, 6), M('#ffee55', { emissive: 2 }), 6.6, 16, z * 1.5));
-    }
-    add(mesh(G.sphere(1.6, 8, 6), M('#2c3a10'), 10.3, 5.6, 0));
-  }
-  root.userData = { body: b, extra, type };
-  return root;
-}
-
-export function poseEnemy(o, { phase, moving, t }) {
-  const u = o.userData;
-  if (u.type === 'runner') u.body.position.y = moving ? Math.abs(Math.sin(phase * 1.4)) * 2.2 : 0;
-  else if (u.type === 'spitter') u.body.scale.set(1 + Math.sin(t * 6) * 0.06, 1 - Math.sin(t * 6) * 0.06, 1);
-  else if (u.type === 'brute') u.body.rotation.x = moving ? Math.sin(phase * 0.5) * 0.06 : 0;
-  else u.body.rotation.x = Math.sin(t * 3) * 0.08;
-  u.extra.forEach((c, i) => {
-    const a = t * 2.5 + (i * Math.PI) / 2;
-    c.position.set(Math.cos(a) * 9, 12 + Math.sin(t * 4 + i) * 4, Math.sin(a) * 9);
-    c.rotation.set(t * 3, t * 2, 0);
-  });
-}
+// ---------- companions and enemies: realistic models (see creatures3d.js) ----------
+export { buildCreature, poseCreature, buildEnemy, poseEnemy } from './creatures3d.js';
 
 // ---------- pickups ----------
 export function buildPickup(kind) {
@@ -300,5 +166,11 @@ export class ModelKit {
     this.live.delete(id);
   }
   end() { for (const [id, e] of this.live) if (!this.seen.has(id)) this.release(id, e); }
+  // Builds models ahead of time (hidden, on the free list) so a wave spawning does not stutter.
+  prewarm(key, build, n) {
+    const list = this.free.get(key) || [];
+    while (list.length < n) { const o = build(); o.visible = false; this.parent.add(o); list.push(o); }
+    this.free.set(key, list);
+  }
   clear() { for (const [id, e] of [...this.live]) this.release(id, e); }
 }

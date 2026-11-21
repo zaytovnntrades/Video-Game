@@ -14,13 +14,13 @@ import { LOOK } from '../shared/data.js';
 export const HUMAN_HEIGHT = 26.5;
 
 // ---------------------------------------------------------------- textures
-function cvs(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
-function rng(seed) {
+export function cvs(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+export function rng(seed) {
   let a = seed >>> 0;
   return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 // Builds a tangent-space normal map from a grey height canvas (Sobel).
-function normalMap(hc, strength = 2) {
+export function normalMap(hc, strength = 2) {
   const w = hc.width, h = hc.height;
   const src = hc.getContext('2d').getImageData(0, 0, w, h).data;
   const out = cvs(w, h), og = out.getContext('2d'), img = og.createImageData(w, h), d = img.data;
@@ -33,7 +33,7 @@ function normalMap(hc, strength = 2) {
   og.putImageData(img, 0, 0);
   return out;
 }
-function tex(c, rx = 1, ry = 1, color = true) {
+export function tex(c, rx = 1, ry = 1, color = true) {
   const t = new THREE.CanvasTexture(c);
   if (color) t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -43,7 +43,7 @@ function tex(c, rx = 1, ry = 1, color = true) {
 }
 
 let TX = null;
-function textures() {
+export function textures() {
   if (TX) return TX;
   const r = rng(91);
   const make = (size, drawColor, drawHeight) => {
@@ -112,7 +112,7 @@ function textures() {
 // ---------------------------------------------------------------- geometry helpers
 const V = (r, y) => new THREE.Vector2(r, y);
 // Turned profile (r, y) around the y axis; sx/sz scale the cross-section into an ellipse.
-function lathe(pts, seg = 16, sx = 1, sz = 1) {
+export function lathe(pts, seg = 16, sx = 1, sz = 1) {
   // LatheGeometry wants the profile bottom-to-top, or its faces point inward
   if (pts[0][1] > pts[pts.length - 1][1]) pts = pts.slice().reverse();
   const g = new THREE.LatheGeometry(pts.map(([r, y]) => V(r, y)), seg);
@@ -120,7 +120,7 @@ function lathe(pts, seg = 16, sx = 1, sz = 1) {
   return g;
 }
 // Collects parts per body segment and emits one merged mesh per material.
-class Parts {
+export class Parts {
   constructor() { this.byMat = new Map(); }
   add(geo, mat, { p = [0, 0, 0], r = [0, 0, 0], s = [1, 1, 1] } = {}) {
     const g = geo.index ? geo.clone() : mergeVertices(geo.clone());
@@ -306,10 +306,10 @@ export function buildHuman(look, opts = {}) {
 
   // hair + brows (+ hat)
   const hairP = new Parts();
-  for (const z of [-0.5, 0.5]) hairP.add(new THREE.BoxGeometry(0.12, 0.085, 0.6), hair, { p: [1.36, eyeY + 0.38, z * 1.02], r: [z > 0 ? 0.12 : -0.12, 0, 0] });
+  if (!opts.noHair) for (const z of [-0.5, 0.5]) hairP.add(new THREE.BoxGeometry(0.12, 0.085, 0.6), hair, { p: [1.36, eyeY + 0.38, z * 1.02], r: [z > 0 ? 0.12 : -0.12, 0, 0] });
   const style = look.style | 0, hat = opts.noHat ? 0 : look.hat | 0;
-  hairP.add(hairCap(), hair, { p: [0, 1.65, 0] });
-  if (style === 1 && hat === 0) {
+  if (!opts.noHair) hairP.add(hairCap(), hair, { p: [0, 1.65, 0] });
+  if (opts.noHair) { /* bald */ } else if (style === 1 && hat === 0) {
     const R = rng(7);
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2, rr = 0.35 + R() * 0.75;
@@ -402,8 +402,64 @@ export function buildHuman(look, opts = {}) {
       guns[k] = inst;
     }
   }
-  root.userData = { pelvis, spine, neck, head, arms, legs, guns, mats: [skin, hair, shirt, pants], kind: 'human' };
+  root.userData = { pelvis, spine, neck, head, arms, legs, guns, mats: [skin, hair, shirt, pants], kind: 'human', irisMat: irisM };
   return root;
+}
+
+// ---------------------------------------------------------------- skinned (enemies)
+// Bakes a built human into ONE SkinnedMesh: every part is merged into a single
+// geometry with per-vertex colours and rigidly bound to a bone that mirrors its
+// joint group. poseHuman() drives the bones exactly like the groups, but an enemy
+// costs one draw call (plus one for glowing eyes) instead of ~20.
+export function bakeSkinned(rig, { glowMat = null } = {}) {
+  const u = rig.userData;
+  const joints = [u.pelvis, u.spine, u.neck, u.head, ...u.arms.flatMap((a) => [a.sh, a.el, a.wr]), ...u.legs.flatMap((l) => [l.hip, l.knee, l.ankle])];
+  rig.updateMatrixWorld(true);
+  const bone = new Map();
+  const bones = joints.map((j) => { const b = new THREE.Bone(); b.position.copy(j.position); b.quaternion.copy(j.quaternion); b.scale.copy(j.scale); bone.set(j, b); return b; });
+  for (const j of joints) { const pb = bone.get(j.parent); if (pb) pb.add(bone.get(j)); }
+  const geos = [], glow = [];
+  const inv = new THREE.Matrix4().copy(rig.matrixWorld).invert();
+  rig.traverse((o) => {
+    if (!o.isMesh) return;
+    let j = o.parent;
+    while (j && !bone.has(j)) j = j.parent;
+    if (!j) return;
+    const m = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+    if (glowMat && o.material === glowMat) { // keep emissive eyes as a separate mesh on the head bone
+      const local = new THREE.Matrix4().multiplyMatrices(new THREE.Matrix4().copy(j.matrixWorld).invert(), o.matrixWorld);
+      const g = o.geometry.clone().applyMatrix4(local);
+      glow.push([bone.get(j), g]);
+      return;
+    }
+    const g = o.geometry.clone().applyMatrix4(m);
+    for (const k of Object.keys(g.attributes)) if (!['position', 'normal'].includes(k)) g.deleteAttribute(k);
+    const n = g.attributes.position.count, col = new Float32Array(n * 3), si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+    const c = o.material.color;
+    const idx = joints.indexOf(j);
+    for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; si[i * 4] = idx; sw[i * 4] = 1; }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
+    g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+    geos.push(g);
+  });
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.65 });
+  const mesh = new THREE.SkinnedMesh(mergeGeometries(geos), mat);
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.add(bones[0]);
+  mesh.bind(new THREE.Skeleton(bones));
+  for (const [b, g] of glow) b.add(new THREE.Mesh(g, glowMat));
+  const map = (j) => bone.get(j);
+  const out = new THREE.Group();
+  out.add(mesh);
+  out.userData = {
+    pelvis: map(u.pelvis), spine: map(u.spine), neck: map(u.neck), head: map(u.head),
+    arms: u.arms.map((a) => ({ sh: map(a.sh), el: map(a.el), wr: map(a.wr), side: a.side })),
+    legs: u.legs.map((l) => ({ hip: map(l.hip), knee: map(l.knee), ankle: map(l.ankle), side: l.side })),
+    guns: {}, mats: [mat], kind: 'human',
+  };
+  // the arm bones are posed with quaternions relative to the spine, like the groups
+  return out;
 }
 
 // ---------------------------------------------------------------- posing

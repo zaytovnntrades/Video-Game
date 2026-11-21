@@ -297,6 +297,12 @@ export class Renderer3D {
     this.scene.add(ms.group);
     this.mini = ms.mini;
     this.setLighting(map.kind === 'city');
+    if (this.detailed) { // pre-build enemies so waves don't hitch when they spawn
+      this.models.prewarm('enzombie0', () => buildEnemy('zombie', false), 10);
+      this.models.prewarm('enrunner0', () => buildEnemy('runner', false), 6);
+      this.models.prewarm('enspitter0', () => buildEnemy('spitter', false), 3);
+      this.models.prewarm('enbrute0', () => buildEnemy('brute', false), 2);
+    }
     if (changed || !force) { this.parts = []; this.texts = []; this.rings = []; }
     this.street.ready = false;
   }
@@ -729,7 +735,7 @@ export class Renderer3D {
     }
     for (const e of scene.enemies) {
       if (e.hpPct >= 100 || !near(e)) continue;
-      const s = this.project(e.x, e.y, e.boss ? 62 : 36);
+      const s = this.project(e.x, e.y, this.detailed ? (e.boss ? 62 : { zombie: 32, runner: 20, spitter: 22, brute: 42 }[e.type] || 30) : e.boss ? 62 : 36);
       if (onScreen(s)) this.bar(s.x, s.y, e.boss ? 46 : 26, e.hpPct / 100, e.boss ? '#ffd23f' : '#ff5d6c');
     }
     for (const p of scene.players) {

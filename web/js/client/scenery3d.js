@@ -7,6 +7,7 @@ import * as THREE from '../../vendor/three.module.min.js';
 import { TILE } from '../shared/data.js';
 import { T, tileAt } from '../shared/maps.js';
 import { renderGround, ROOFS, shade } from './art.js';
+import { mergeGeometries } from '../../vendor/jsm/utils/BufferGeometryUtils.js';
 
 const WALLS = ['#f2e6d0', '#ece0c8', '#f6efe4', '#eadcc6', '#f1e3cd', '#e9dfd2'];
 function canvas(w, h) {
@@ -572,7 +573,88 @@ export class UltraScene {
     }
   }
 
+  // Street level: no building fades, so every facade style, roof, door and awning
+  // shares one material and all buildings merge into one mesh per material
+  // (~20 draw calls for the whole skyline). Texture tiling is baked into the UVs.
+  buildMergedBuildings() {
+    const map = this.map, keep = this.keep;
+    const FLOOR = 36;
+    const batches = new Map();
+    const put = (mat, geo, x, y, z, ry = 0, rx = 0) => {
+      geo.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, 0)), new THREE.Vector3(1, 1, 1)));
+      for (const k of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(k)) geo.deleteAttribute(k);
+      if (!batches.has(mat)) batches.set(mat, []);
+      batches.get(mat).push(geo);
+    };
+    const shared = new Map();
+    const once = (key, make) => { if (!shared.has(key)) shared.set(key, keep(make())); return shared.get(key); };
+    const facadeMat = (i) => once('f' + i, () => {
+      const fac = facade(i, this.aniso);
+      return new THREE.MeshStandardMaterial({ map: fac.map, emissiveMap: fac.emissive, emissive: new THREE.Color('#ffffff'), emissiveIntensity: 1.5, roughness: fac.rough, metalness: fac.metal });
+    });
+    const wall = (w, h) => { // plane facing +z with UVs in facade repeats (128 x 4 floors)
+      const g = new THREE.PlaneGeometry(w, h);
+      const uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (w / 128), uv.getY(i) * (h / (FLOOR * 4)));
+      return g;
+    };
+    const roofTop = once('rooftop', () => new THREE.MeshStandardMaterial({ color: '#3d3f45', roughness: 0.9 }));
+    const doorM = once('door', () => new THREE.MeshStandardMaterial({ color: '#4a2f1a', roughness: 0.6 }));
+    const lampM = once('doorlamp', () => new THREE.MeshStandardMaterial({ color: '#ffd28a', emissive: new THREE.Color('#ffc46a'), emissiveIntensity: 3 }));
+    const parapetM = once('parapet', () => new THREE.MeshStandardMaterial({ color: '#6b6e76', roughness: 0.8 }));
+    const beaconM = once('beacon', () => new THREE.MeshStandardMaterial({ color: '#ff3030', emissive: new THREE.Color('#ff2020'), emissiveIntensity: 4 }));
+    let beacons = 0;
+    for (const r of rects(map, T.BUILD)) {
+      const rand = rng(r.x0 * 131 + r.y0 * 977);
+      const big = r.w >= 5;
+      const W = r.w * TILE, D = r.h * TILE;
+      const floors = big ? 5 + Math.floor(rand() * 7) : 2;
+      const hw = floors * FLOOR;
+      const style = big ? Math.floor(rand() * FACADES.length) : [0, 3, 1][Math.floor(rand() * 3)];
+      const fm = facadeMat(style);
+      const cx = r.x0 * TILE + W / 2, cz = r.y0 * TILE + D / 2;
+      put(fm, wall(W, hw), cx, hw / 2, cz + D / 2, 0);
+      put(fm, wall(W, hw), cx, hw / 2, cz - D / 2, Math.PI);
+      put(fm, wall(D, hw), cx + W / 2, hw / 2, cz, Math.PI / 2);
+      put(fm, wall(D, hw), cx - W / 2, hw / 2, cz, -Math.PI / 2);
+      const v0 = map.variant[r.y0 * map.w + r.x0];
+      const roofCol = ROOFS[v0 & 7] || ROOFS[1];
+      let door = -1;
+      for (let x = r.x0; x <= r.x1; x++) if (map.variant[r.y1 * map.w + x] & 8) door = x;
+      if (door >= 0) {
+        const fz = (r.y1 + 1) * TILE, dx = (door + 0.5) * TILE, dh = 30;
+        const aw = once('aw' + roofCol, () => new THREE.MeshStandardMaterial({ color: roofCol, roughness: 0.7 }));
+        put(doorM, new THREE.BoxGeometry(15, dh, 1.2), dx, dh / 2, fz + 0.4);
+        put(aw, new THREE.BoxGeometry(22, 1.6, 7), dx, dh + 2.5, fz + 3.4);
+        put(lampM, new THREE.BoxGeometry(6, 1.4, 1.2), dx, dh + 5.5, fz + 0.6);
+      }
+      if (big) {
+        put(roofTop, new THREE.PlaneGeometry(W, D), cx, hw, cz, 0, -Math.PI / 2);
+        for (const [w, d, x, z] of [[W, 2, 0, -D / 2 + 1], [W, 2, 0, D / 2 - 1], [2, D, -W / 2 + 1, 0], [2, D, W / 2 - 1, 0]]) put(parapetM, new THREE.BoxGeometry(w, 5, d), cx + x, hw + 2.5, cz + z);
+        put(parapetM, new THREE.BoxGeometry(28, 14, 20), cx - W / 5, hw + 7, cz - D / 6);
+        if (hw > 150) { put(beaconM, new THREE.SphereGeometry(2.2, 10, 8), cx + W / 4, hw + 9, cz + D / 4); beacons++; }
+      } else {
+        const rm = once('gable' + roofCol, () => {
+          const c = canvas(16, 16), g = c.getContext('2d');
+          g.fillStyle = roofCol; g.fillRect(0, 0, 16, 16);
+          g.fillStyle = shade(roofCol, -0.2); g.fillRect(0, 6, 16, 2); g.fillRect(0, 14, 16, 2);
+          const t = keep(new THREE.CanvasTexture(c)); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+          return new THREE.MeshStandardMaterial({ map: t, roughness: 0.75, side: THREE.DoubleSide });
+        });
+        put(rm, gableGeometry(W + 8, D + 8, 26), cx, hw, cz);
+      }
+    }
+    for (const [mat, list] of batches) {
+      const m = new THREE.Mesh(keep(mergeGeometries(list)), mat);
+      m.castShadow = mat !== lampM && mat !== beaconM;
+      m.receiveShadow = true;
+      this.group.add(m);
+    }
+    if (beacons) this.beacons.push(beaconM);
+  }
+
   buildBuildings() {
+    if (this.tall) { this.buildMergedBuildings(); return; }
     const map = this.map, keep = this.keep;
     const box = new Map();
     const boxG = (w, h, d) => { const k = `${w},${h},${d}`; if (!box.has(k)) box.set(k, keep(new THREE.BoxGeometry(w, h, d))); return box.get(k); };
