@@ -1,0 +1,91 @@
+// CPU opponent: reads the fight and produces the same input struct a player would.
+// Buttons are "tapped" by pressing for one tick and releasing on the next.
+import { blankInput } from './fight.js';
+import { mulberry32 } from './rng.js';
+import { BEAMS, ASCEND_COST, APEX_COST } from './data.js';
+
+export const LEVELS = {
+  easy: { react: 0.15, aggro: 0.35, blink: 0.05, guard: 0.2, think: 24 },
+  normal: { react: 0.35, aggro: 0.55, blink: 0.18, guard: 0.4, think: 14 },
+  hard: { react: 0.6, aggro: 0.75, blink: 0.4, guard: 0.6, think: 8 },
+};
+
+export class CPU {
+  constructor(side, level = 'normal', seed = 7) {
+    this.side = side; this.L = LEVELS[level] || LEVELS.normal;
+    this.R = mulberry32((seed ^ (side * 0x5bd1)) >>> 0);
+    this.plan = 'approach'; this.planT = 0;
+    this.tap = null; this.holdKey = null; this.holdT = 0;
+    this.strafe = this.R() < 0.5 ? -1 : 1;
+  }
+
+  // fight: the Fight instance (read only)
+  think(fight) {
+    const inp = blankInput();
+    const me = fight.f[this.side], o = fight.f[1 - this.side];
+    if (fight.over || me.state === 'ko') return inp;
+    const R = this.R, L = this.L;
+    const dx = o.pos.x - me.pos.x, dy = o.pos.y - me.pos.y, dz = o.pos.z - me.pos.z;
+    const dist = Math.hypot(dx, dy, dz);
+
+    // finish a held button first
+    if (this.holdKey) {
+      inp[this.holdKey] = true;
+      if (--this.holdT <= 0) this.holdKey = null;
+      return inp;
+    }
+    // a tap is press-one-tick, release the next: emit nothing this tick
+    if (this.tap) { this.tap = null; return inp; }
+    const tap = (k) => { inp[k] = true; this.tap = k; };
+    const hold = (k, t) => { inp[k] = true; this.holdKey = k; this.holdT = t; };
+
+    // defence: react to incoming attacks
+    const threatened = (o.state === 'attack' && dist < 4) || o.state === 'rush' || fight.beams.some((b) => b.owner === o.side) ||
+      fight.projectiles.some((p) => p.owner === o.side && Math.hypot(p.pos.x - me.pos.x, p.pos.y - me.pos.y - 1, p.pos.z - me.pos.z) < 6);
+    if ((me.state === 'stun' || me.state === 'launched') && me.blink > 0 && me.meter >= 20 && R() < L.blink * 0.15) { tap('guard'); return inp; }
+    if (threatened && ['idle', 'guard'].includes(me.state)) {
+      if (me.blink > 0 && R() < L.blink * 0.5) { tap('guard'); return inp; }
+      if (R() < L.guard) { hold('guard', 10 + Math.floor(R() * 14)); return inp; }
+    }
+    if (me.state !== 'idle') { // mid-move: keep comboing if we're attacking
+      if (me.state === 'attack' && me.move !== 'smash' && R() < L.aggro + 0.2) tap('atk');
+      return inp;
+    }
+
+    // re-plan every so often
+    if (--this.planT <= 0) {
+      this.planT = L.think + Math.floor(R() * L.think);
+      const r = R();
+      if (me.ascended && me.meter >= APEX_COST - 1) this.plan = 'apex';
+      else if (!me.ascended && me.meter >= ASCEND_COST + 25 && r < 0.3) this.plan = 'ascend';
+      else if (me.meter < 25 && dist > 25 && r < 0.6) this.plan = 'charge';
+      else if (dist > 14 && r < 0.45) this.plan = me.meter >= BEAMS[me.spec.moves.beam].cost && R() < 0.35 ? 'beam' : 'blast';
+      else if (r < L.aggro + 0.25) this.plan = 'rushdown';
+      else this.plan = 'strafe';
+      if (R() < 0.3) this.strafe = -this.strafe;
+    }
+
+    switch (this.plan) {
+      case 'apex': case 'ascend': tap('special'); this.planT = 0; break;
+      case 'charge': hold('dash', 40 + Math.floor(R() * 40)); this.planT = 0; break;
+      case 'beam': hold('blast', 20); this.planT = 0; break;
+      case 'blast': tap('blast'); inp.mx = this.strafe; break;
+      case 'rushdown':
+        if (dist > 12 && R() < 0.4) { tap('dash'); break; } // dash in
+        if (dist < 3.2) {
+          if (me.meter >= 30 && R() < 0.05) { inp.mx = this.strafe; tap('dash'); this.plan = 'rushfollow'; this.planT = 3; break; }
+          if (o.state === 'guard' && R() < 0.5) { hold('atk', 16); break; }
+          tap('atk'); break;
+        }
+        inp.my = 1;
+        if (Math.abs(dy) > 2) { if (dy > 0) inp.jump = me.onGround ? R() < 0.5 : true; }
+        if (me.onGround && dy > 2 && R() < 0.2) tap('jump');
+        break;
+      case 'rushfollow': tap('atk'); break;
+      default: // strafe
+        inp.mx = this.strafe; inp.my = dist > 8 ? 0.6 : dist < 4 ? -0.6 : 0;
+        if (R() < 0.04) tap('blast');
+    }
+    return inp;
+  }
+}
