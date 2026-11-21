@@ -497,46 +497,91 @@ function reach(arm, tx, ty, tz) {
   arm.wr.quaternion.set(0, 0, 0, 1);
 }
 
-// state: { phase, moving, wpn, hurt, t, armed, motion: [dx, dy], ang }
+// Per-weapon recoil: [kick back (units), muzzle climb (radians)].
+const KICK = { pistol: [0.9, 0.32], uzi: [0.45, 0.12], shotgun: [2.0, 0.5], rifle: [1.3, 0.28], rocket: [2.2, 0.22] };
+const _G = new THREE.Vector3();
+
+// Layered procedural animation.
+// state: { phase, moving, spd, wpn, hurt, t, armed, motion: [dx, dy], ang,
+//          recoil 0..1, flinch 0..1, low 0..1 (weapon lowered), emote 0..1 (cheer), seed }
+//  locomotion: walk -> run blend by speed (stride, knee lift, lean, counter-twist),
+//              strafe and backpedal from the motion relative to facing
+//  idle:       breathing, weight shift, looking around
+//  upper body: two-handed aim with recoil (weapon + both hands kick together),
+//              low-ready carry when sprinting, unarmed arm swing, victory cheer
+//  reactions:  flinch when hurt
 export function poseHuman(o, s) {
   const u = o.userData;
-  // movement relative to facing: forward / sideways share of the step
-  let fwd = 1, side = 0, speed = s.moving ? 1 : 0;
+  const t = s.t, seed = s.seed || 0;
+  let fwd = 1, side = 0;
   if (s.motion && s.moving) {
     const [dx, dy] = s.motion, l = Math.hypot(dx, dy);
     if (l > 1e-4) { const c = Math.cos(s.ang || 0), n = Math.sin(s.ang || 0); fwd = (dx * c + dy * n) / l; side = (-dx * n + dy * c) / l; }
   }
+  const spd = s.moving ? (s.spd || 120) : 0;
+  const amp = Math.min(1, spd / 55); // 0 standing .. 1 full stride
+  const run = Math.min(1, Math.max(0, (spd - 75) / 60)); // 0 walk .. 1 run
   const ph = s.phase;
+
+  // legs
   for (const L of u.legs) {
     const lp = ph + (L.side > 0 ? Math.PI : 0);
-    const sw = Math.sin(lp) * 0.55 * speed;
-    L.hip.rotation.set(sw * side * 0.7 * L.side, 0, sw * fwd);
-    const bend = speed * (0.12 + Math.max(0, -Math.cos(lp)) * 0.95);
-    L.knee.rotation.set(0, 0, -bend);
-    L.ankle.rotation.set(0, 0, bend * 0.45 - sw * fwd * 0.4);
+    const sw = Math.sin(lp) * (0.42 + 0.32 * run) * amp;
+    const bend = amp * (0.08 + 0.12 * run + Math.max(0, -Math.cos(lp)) * (0.8 + 0.65 * run));
+    const shift = amp < 0.05 ? Math.sin(t * 0.55 + seed) * 0.045 * L.side : 0; // idle weight shift
+    L.hip.rotation.set(sw * side * 0.8 * L.side + shift, 0, sw * fwd);
+    L.knee.rotation.set(0, 0, -bend - (amp < 0.05 && Math.sin(t * 0.55 + seed) * L.side > 0 ? 0.08 : 0));
+    L.ankle.rotation.set(0, 0, bend * 0.45 - sw * fwd * 0.45);
   }
-  const t = s.t;
-  u.pelvis.position.y = 14.4 - (speed ? Math.abs(Math.sin(ph)) * 0.35 : 0);
-  u.spine.rotation.set(speed ? Math.sin(ph) * 0.06 : 0, speed ? -Math.sin(ph) * 0.08 : 0, speed ? -0.06 * fwd : 0);
-  const breath = 1 + Math.sin(t * 1.7) * 0.012;
+  // hips and spine
+  const bob = amp * (0.22 + 0.38 * run) * Math.abs(Math.sin(ph));
+  u.pelvis.position.y = 14.4 - bob - run * 0.35 * amp;
+  u.pelvis.rotation.set(amp < 0.05 ? Math.sin(t * 0.55 + seed) * 0.03 : Math.sin(ph) * 0.05 * amp, Math.sin(ph) * 0.12 * amp, 0);
+  const lean = -(0.05 + 0.2 * run) * amp * fwd;
+  const rc = s.recoil || 0, fl = s.flinch || 0;
+  u.spine.rotation.set(
+    fl * 0.22 * Math.sin(t * 40),
+    -Math.sin(ph) * 0.14 * amp,
+    lean + rc * 0.07 + fl * 0.18,
+  );
+  const breath = 1 + Math.sin(t * (1.6 + run * 1.4)) * (0.012 + run * 0.01);
   u.spine.scale.set(breath, 1, breath);
-  u.head.rotation.set(0, 0, speed ? 0.04 : Math.sin(t * 0.6) * 0.03);
+  const look = amp < 0.05 && !(s.armed !== false) ? Math.sin(t * 0.35 + seed) * 0.35 : 0;
+  u.head.rotation.set(fl * -0.25, look + Math.sin(ph) * 0.06 * amp, (amp < 0.05 ? Math.sin(t * 0.8 + seed) * 0.03 : 0.03) + rc * 0.05 - fl * 0.2);
 
-  const armed = s.armed !== false && Object.keys(u.guns).length;
+  // upper body
+  const cheer = s.emote || 0;
+  const armed = s.armed !== false && Object.keys(u.guns).length && cheer <= 0;
   for (const k in u.guns) u.guns[k].visible = armed && k === (s.wpn || 'pistol');
-  if (armed) {
-    const W = WEAPON[s.wpn] || WEAPON.pistol;
-    const [ax, ay, az] = W.anchor;
-    reach(u.arms[1], ax + W.right[0], ay + W.right[1], az + W.right[2]);
-    reach(u.arms[0], ax + W.left[0], ay + W.left[1], az + W.left[2]);
+  if (cheer > 0) { // victory: fists pumping overhead
+    for (const A of u.arms) {
+      const pump = Math.sin(t * 9 + (A.side > 0 ? 0 : 1.2)) * 0.25;
+      A.sh.quaternion.setFromEuler(new THREE.Euler(-A.side * 0.35, 0, Math.PI * 0.92 + pump));
+      A.el.quaternion.setFromEuler(new THREE.Euler(0, 0, 0.35 + pump * 0.6));
+      A.wr.quaternion.set(0, 0, 0, 1);
+    }
+    u.head.rotation.z += 0.25; // look up
+  } else if (armed) {
+    const wpn = s.wpn || 'pistol';
+    const W = WEAPON[wpn] || WEAPON.pistol, [kick, climb] = KICK[wpn] || KICK.pistol;
+    const low = s.low || 0;
+    const gun = u.guns[wpn];
+    const ax = W.anchor[0] - kick * rc - low * 0.8, ay = W.anchor[1] - low * 1.8, az = W.anchor[2] - low * 0.3;
+    const pitch = climb * rc - low * 0.55;
+    gun.position.set(ax, ay, az);
+    gun.rotation.set(0, 0, pitch);
+    const grip = (g) => { _G.set(g[0], g[1], g[2]).applyAxisAngle(Z_AXIS, pitch); return [ax + _G.x, ay + _G.y, az + _G.z]; };
+    reach(u.arms[1], ...grip(W.right));
+    reach(u.arms[0], ...grip(W.left));
   } else {
     for (const A of u.arms) {
-      const sw = speed ? Math.sin(ph + (A.side > 0 ? 0 : Math.PI)) * 0.45 * fwd : Math.sin(t * 1.3 + A.side) * 0.03;
-      A.sh.quaternion.setFromEuler(new THREE.Euler(-A.side * 0.09, 0, sw)); // arms hang slightly away from the body
-      A.el.quaternion.setFromEuler(new THREE.Euler(0, 0, 0.25 + (speed ? Math.max(0, sw) * 0.5 : 0)));
+      const sw = amp > 0.05 ? Math.sin(ph + (A.side > 0 ? 0 : Math.PI)) * (0.4 + 0.45 * run) * amp * fwd : Math.sin(t * 1.3 + A.side + seed) * 0.03;
+      A.sh.quaternion.setFromEuler(new THREE.Euler(-A.side * (0.09 + 0.05 * run), 0, sw));
+      A.el.quaternion.setFromEuler(new THREE.Euler(0, 0, 0.2 + run * 1.0 * amp + (amp > 0.05 ? Math.max(0, sw) * 0.5 : 0)));
       A.wr.quaternion.set(0, 0, 0, 1);
     }
   }
   const e = s.hurt > 0 ? Math.min(0.5, s.hurt * 1.5) : 0;
   for (const m of u.mats) m.emissive.setRGB(e, 0.05 * e, 0.1 * e);
 }
+const Z_AXIS = new THREE.Vector3(0, 0, 1);

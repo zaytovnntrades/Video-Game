@@ -274,6 +274,7 @@ export class World {
       dmg: C.dmg * p.petMul, owner: p.id, team: 'p', kind: C.elem, pierce: 0, aoe: 0, hit: null,
     });
     pet.cd = C.rate;
+    this.events.push({ t: 'pshot', pid: p.id });
   }
 
   // ---------- cars ----------
@@ -427,11 +428,13 @@ export class World {
             dmg: E.dmg * e.dmgMul, owner: 0, team: 'e', kind: 'spit', pierce: 0, aoe: 0, hit: null,
           });
           e.cd = E.rate;
+          this.events.push({ t: 'atk', id: e.id });
         }
         if (d < E.keep) { e.ang = Math.atan2(dy, dx); ux = 0; uy = 0; }
       }
     } else if (d < e.r + tr + 4 && e.cd <= 0) {
       e.cd = E.rate;
+      this.events.push({ t: 'atk', id: e.id });
       this.damagePlayer(t, E.dmg * e.dmgMul, 0);
     }
     if (ux || uy) {
@@ -466,13 +469,13 @@ export class World {
   damageEnemy(e, dmg, pid) {
     if (e.dead) return;
     e.hp -= dmg;
-    this.events.push({ t: 'hit', x: Math.round(e.x), y: Math.round(e.y), d: Math.round(dmg) });
+    this.events.push({ t: 'hit', id: e.id, x: Math.round(e.x), y: Math.round(e.y), d: Math.round(dmg) });
     if (e.hp <= 0) this.killEnemy(e, pid);
   }
 
   killEnemy(e, pid) {
     e.dead = true;
-    this.events.push({ t: 'die', x: Math.round(e.x), y: Math.round(e.y), k: e.type, boss: e.boss ? 1 : 0 });
+    this.events.push({ t: 'die', id: e.id, x: Math.round(e.x), y: Math.round(e.y), k: e.type, boss: e.boss ? 1 : 0 });
     const killer = this.byId(pid);
     if (killer) killer.kills++;
     // Co-op shares rewards with the whole squad.

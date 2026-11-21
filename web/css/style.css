@@ -229,3 +229,14 @@ body.cam-street #zone-fire small { font-size: 6px; opacity: .8; }
 body.cam-street.dual-v .pbtn.fire { display: none; }
 
 body.cam-street #tilt { display: none; } /* miniature blur is for the overhead view only */
+
+/* ---------- Surprise Me showcase ---------- */
+#showcase { position: fixed; inset: 0; z-index: 3; pointer-events: none; }
+.sc-card { position: absolute; left: calc(18px + var(--sal)); bottom: calc(18px + var(--sab)); display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; background: linear-gradient(90deg, rgba(20,16,34,.85), rgba(20,16,34,0)); border-left: 4px solid var(--gold); animation: scin 1s ease-out; }
+.sc-card b { font-size: 18px; font-weight: normal; color: var(--gold); text-shadow: 3px 3px 0 #b0341e; letter-spacing: 2px; }
+.sc-card span { font-size: 11px; text-shadow: 2px 2px 0 var(--ink); }
+.sc-card small { font-size: 7px; opacity: .7; }
+@keyframes scin { from { transform: translateX(-30px); opacity: 0; } to { transform: none; opacity: 1; } }
+.sc-btns { position: absolute; right: calc(16px + var(--sar)); top: calc(14px + var(--sat)); display: flex; gap: 10px; pointer-events: auto; }
+.sc-btns button { padding: 10px 14px; font-size: 10px; }
+body.recording .sc-btns { display: none; }

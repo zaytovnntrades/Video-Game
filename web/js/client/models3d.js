@@ -161,39 +161,67 @@ export class ModelKit {
     if (e && e.key !== key) { this.release(id, e); e = null; }
     if (!e) {
       const list = this.free.get(key);
-      const obj = (list && list.pop()) || build();
+      let obj = list && list.pop();
+      if (!obj) { obj = build(); obj.userData.baseScale = obj.scale.x; }
       if (obj.parent !== this.parent) this.parent.add(obj);
-      e = { key, obj, phase: 0, lx: null, ly: null };
+      // per-model animation state lives here (models are pooled)
+      e = { key, obj, phase: 0, lx: null, ly: null, mx: 0, my: 0, spd: 0, recoil: 0, flinch: 0, attack: 0, emote: 0 };
       this.live.set(id, e);
     }
     e.obj.visible = true;
     this.seen.add(id);
     return e;
   }
-  // Tracks movement between frames to drive walk cycles (works for interpolated
-  // multiplayer positions too).
-  step(e, x, y, dt) {
+  // Advances the walk cycle by distance travelled: one full cycle (two steps) per
+  // `stride` world units, so feet don't skate and cadence stays natural at any speed.
+  step(e, x, y, dt, stride = 20) {
     let moving = false;
     e.mx = 0; e.my = 0;
     if (e.lx !== null) {
       const d = Math.hypot(x - e.lx, y - e.ly);
-      if (d < 60) { e.phase += d * 0.32; moving = d / Math.max(dt, 1e-3) > 8; e.mx = x - e.lx; e.my = y - e.ly; }
+      if (d < 60) {
+        e.phase += (d / stride) * Math.PI * 2;
+        const v = d / Math.max(dt, 1e-3);
+        e.spd += (v - e.spd) * Math.min(1, dt * 10);
+        moving = e.spd > 10;
+        e.mx = x - e.lx; e.my = y - e.ly;
+      }
     }
     e.lx = x; e.ly = y;
     return moving;
   }
-  release(id, e) {
-    e.obj.visible = false;
-    if (!this.free.has(e.key)) this.free.set(e.key, []);
-    this.free.get(e.key).push(e.obj);
-    this.live.delete(id);
+  // Decays one-shot animation timers.
+  tick(e, dt) {
+    e.recoil = Math.max(0, e.recoil - dt * 7);
+    e.flinch = Math.max(0, e.flinch - dt * 4);
+    e.attack = Math.max(0, e.attack - dt * 3);
+    e.emote = Math.max(0, e.emote - dt);
   }
-  end() { for (const [id, e] of this.live) if (!this.seen.has(id)) this.release(id, e); }
+  // Hands a live model over (e.g. to a death animation) without returning it to the pool.
+  detach(id) {
+    const e = this.live.get(id);
+    if (e) this.live.delete(id);
+    return e || null;
+  }
+  // Back to the free list with a clean transform, so the next spawn isn't left mid-fall.
+  release(id, e) {
+    const o = e.obj;
+    o.visible = false;
+    o.position.set(0, 0, 0);
+    o.rotation.set(0, 0, 0);
+    o.scale.setScalar(o.userData.baseScale || 1);
+    const b = o.userData.body;
+    if (b) { b.position.set(0, 0, 0); b.rotation.set(0, 0, 0); b.scale.set(1, 1, 1); }
+    if (!this.free.has(e.key)) this.free.set(e.key, []);
+    this.free.get(e.key).push(o);
+    if (id !== null) this.live.delete(id);
+  }
   // Builds models ahead of time (hidden, on the free list) so a wave spawning does not stutter.
   prewarm(key, build, n) {
     const list = this.free.get(key) || [];
-    while (list.length < n) { const o = build(); o.visible = false; this.parent.add(o); list.push(o); }
+    while (list.length < n) { const o = build(); o.userData.baseScale = o.scale.x; o.visible = false; this.parent.add(o); list.push(o); }
     this.free.set(key, list);
   }
+  end() { for (const [id, e] of this.live) if (!this.seen.has(id)) this.release(id, e); }
   clear() { for (const [id, e] of [...this.live]) this.release(id, e); }
 }

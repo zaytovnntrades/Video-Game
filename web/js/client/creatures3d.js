@@ -188,26 +188,38 @@ export function buildCreature(type, evolved) {
   return root;
 }
 
-export function poseCreature(o, { phase, moving, t }) {
+// Walk cycles use one full cycle per phase turn (the model kit advances phase by
+// distance). state: { phase, moving, spd, t, attack 0..1 }
+export const CREATURE_STRIDE = { cindkit: 34, puddlo: 46, thornub: 30 };
+export function poseCreature(o, { phase, moving, t, attack = 0, spd = 0 }) {
   const u = o.userData;
-  const m = moving ? 1 : 0;
-  if (u.type === 'puddlo') { // squash-and-stretch hop
-    const h = m ? Math.abs(Math.sin(phase * 0.7)) : 0;
-    u.body.position.y = h * 3;
-    const sq = m ? 1 + Math.cos(phase * 1.4) * 0.08 : 1 + Math.sin(t * 2.5) * 0.03;
-    u.body.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));
+  const m = moving ? Math.min(1, spd / 50 || 1) : 0;
+  const atk = Math.sin(Math.min(1, attack) * Math.PI); // 0 -> 1 -> 0 over the attack
+  if (u.type === 'puddlo') { // squash-and-stretch hops; puffs up to spit
+    const hop = Math.sin(phase);
+    const air = m ? Math.max(0, hop) : 0;
+    u.body.position.y = air * 3.4;
+    const land = m ? Math.max(0, -hop) * 0.16 : 0;
+    const sq = 1 - land + air * 0.08 + Math.sin(t * 2.5) * 0.025 * (1 - m) + atk * 0.18;
+    const wide = 1 / Math.sqrt(Math.max(0.5, sq)) + atk * 0.12;
+    u.body.scale.set(wide, sq, wide);
+    u.body.rotation.z = m ? -0.08 * Math.cos(phase) : 0;
   } else {
-    // diagonal trot: front-left + back-right together
+    // diagonal trot (front-left with back-right), head bob, lunge on attack
     u.legs.forEach((L, i) => {
-      const lp = phase * 1.3 + ((i === 0 || i === 3) ? 0 : Math.PI);
-      const sw = Math.sin(lp) * 0.5 * m;
-      L.hip.rotation.z = sw;
-      L.knee.rotation.z = m ? -Math.max(0, Math.cos(lp)) * 0.7 : 0;
-      L.foot.rotation.z = -sw * 0.4;
+      const lp = phase + ((i === 0 || i === 3) ? 0 : Math.PI);
+      const sw = Math.sin(lp) * 0.55 * m;
+      const front = i < 2;
+      L.hip.rotation.z = sw - (front ? atk * 0.9 : -atk * 0.3);
+      L.knee.rotation.z = m ? -Math.max(0, Math.cos(lp)) * 0.85 * m : 0;
+      L.foot.rotation.z = -sw * 0.45;
     });
-    u.body.position.y = m ? Math.abs(Math.sin(phase * 1.3)) * 0.5 : Math.sin(t * 2) * 0.15;
+    u.body.position.y = (m ? Math.abs(Math.sin(phase)) * 0.7 : Math.sin(t * 2) * 0.12) + atk * 2.2;
+    u.body.position.x = atk * 3.5;
+    u.body.rotation.z = (m ? -0.04 : 0) + atk * 0.25 + (m ? Math.sin(phase * 2) * 0.03 : 0);
   }
-  if (u.tail) u.tail.forEach((s, k) => { s.rotation.x = Math.sin(t * 2.2 + k * 0.6) * (0.18 + k * 0.08); });
+  const wag = moving ? 7 : 2.4;
+  if (u.tail) u.tail.forEach((s, k) => { s.rotation.x = Math.sin(t * wag + k * 0.7) * (0.2 + k * 0.1) * (moving ? 1.3 : 1); });
   u.extra.forEach((d, i) => { const a = t * 1.8 + (i * Math.PI * 2) / 3; d.position.set(Math.cos(a) * 8, 9 + Math.sin(t * 3 + i) * 1.5, Math.sin(a) * 8); });
 }
 
@@ -308,23 +320,44 @@ export function buildEnemy(type, boss) {
   return root;
 }
 
-export function poseEnemy(o, { phase, moving, t }) {
+export const ENEMY_STRIDE = { zombie: 30, runner: 34, spitter: 26, brute: 48 };
+// state: { phase, moving, spd, t, attack 0..1, flinch 0..1, seed }
+export function poseEnemy(o, { phase, moving, t, attack = 0, flinch = 0, spd = 0, seed = 0 }) {
   const u = o.userData;
-  if (u.type === 'zombie') {
-    poseHuman(u.human, { phase, moving, t, armed: false, motion: [1, 0], ang: 0, hurt: 0 });
+  const atk = Math.sin(Math.min(1, attack) * Math.PI);
+  const fl = flinch > 0 ? Math.sin(flinch * Math.PI * 3) * flinch : 0;
+  if (u.type === 'zombie') { // Glitch: limping shamble, digital jitter, two-armed swipe
+    poseHuman(u.human, { phase, moving, spd: moving ? Math.min(spd, 60) : 0, t, armed: false, motion: [1, 0], ang: 0, hurt: 0, seed, flinch });
     const H = u.human.userData;
-    H.spine.rotation.z -= 0.22; // hunched
-    for (const A of H.arms) { A.sh.quaternion.setFromEuler(new THREE.Euler(-A.side * 0.15, 0, 1.25 + Math.sin(t * 2 + A.side) * 0.1)); A.el.quaternion.setFromEuler(new THREE.Euler(0, 0, 0.2)); }
-  } else if (u.type === 'runner') {
+    H.legs[0].hip.rotation.z *= 0.55; // dragging leg
+    H.spine.rotation.z -= 0.24 + atk * 0.35;
+    H.head.rotation.x += Math.sin(t * 1.7 + seed) * 0.15;
+    for (const A of H.arms) {
+      const reachOut = 1.2 + Math.sin(t * 2 + A.side + seed) * 0.1 - atk * 1.3;
+      A.sh.quaternion.setFromEuler(new THREE.Euler(-A.side * (0.15 + atk * 0.35), 0, reachOut));
+      A.el.quaternion.setFromEuler(new THREE.Euler(0, 0, 0.2 + atk * 0.4));
+    }
+    // glitch flicker: brief sideways jumps a few times a second
+    const g = Math.sin(t * 23 + seed * 7) > 0.93 ? (Math.sin(t * 91 + seed) * 1.6) : 0;
+    u.body.position.set(g * 0.6, 0, g);
+    if (u.swarm) { u.swarm.rotation.y = t * 2.5; u.swarm.position.y = 16 + Math.sin(t * 4) * 2; }
+  } else if (u.type === 'runner') { // Dasher: bounding sprint, tail whip, leap
     const m = moving ? 1 : 0;
-    u.legs.forEach((L, i) => { const s = Math.sin(phase * 1.6 + i * Math.PI) * 0.6 * m; L.hip.rotation.z = s; L.knee.rotation.z = m ? Math.max(0, -s) * 0.8 : 0; });
-    u.body.position.y = m ? Math.abs(Math.sin(phase * 1.6)) * 1.2 : 0;
-  } else if (u.type === 'spitter') {
-    const w = Math.sin(t * 5) * 0.06;
-    u.body.scale.set(1 + w, 1 - w, 1);
-  } else if (u.type === 'brute') {
-    u.body.rotation.x = moving ? Math.sin(phase * 0.5) * 0.06 : 0;
-    u.body.position.y = moving ? Math.abs(Math.sin(phase * 0.5)) * 0.8 : 0;
+    u.legs.forEach((L, i) => { const sw = Math.sin(phase + i * Math.PI) * 0.7 * m; L.hip.rotation.z = sw - atk * 0.6; L.knee.rotation.z = m ? Math.max(0, -sw) * 0.9 : 0; });
+    u.body.position.y = (m ? Math.abs(Math.sin(phase)) * 1.6 : Math.sin(t * 6) * 0.2) + atk * 4;
+    u.body.position.x = atk * 4 + fl;
+    u.body.rotation.z = (m ? -0.18 : 0) - atk * 0.3 + Math.sin(phase) * 0.06 * m;
+    u.body.rotation.x = Math.sin(t * 9) * 0.05;
+  } else if (u.type === 'spitter') { // slither waves; rears back, then spits
+    const w = Math.sin(t * 5 + (moving ? phase : 0)) * 0.07;
+    u.body.scale.set(1 + w + atk * 0.1, 1 - w + atk * 0.15, 1);
+    u.body.rotation.z = atk * 0.45 - (attack > 0.5 ? (attack - 0.5) * 0.5 : 0); // rear back, then snap forward
+    u.body.position.x = fl * 1.2;
+  } else if (u.type === 'brute') { // heavy stomps, lurching slam
+    const m = moving ? 1 : 0;
+    u.body.rotation.x = Math.sin(phase) * 0.09 * m;
+    u.body.rotation.z = -atk * 0.35 + fl * 0.08;
+    u.body.position.y = m ? Math.abs(Math.sin(phase)) * 1.4 : 0;
+    u.body.position.x = atk * 3;
   }
-  if (u.swarm) { u.swarm.rotation.y = t * 2.5; u.swarm.position.y = 16 + Math.sin(t * 4) * 2; }
 }

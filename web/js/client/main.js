@@ -7,7 +7,7 @@ import { buildCharacter, buildCreature } from './models3d.js';
 import { Input } from './input.js';
 import { charSprite, petSprite } from './art.js';
 import { loadProfile, saveProfile, resetProfile, defaultProfile, canBuy, buy, spendPoint } from './save.js';
-import { LocalGame, NetGame } from './game.js';
+import { LocalGame, NetGame, ShowcaseGame } from './game.js';
 import { sfx, unlock, setSound } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -169,7 +169,7 @@ app.input.onPause = () => togglePause();
 app.input.bindFire($('b-fire'));
 app.input.bindFire($('pb-fire'));
 app.input.bindFire($('zone-fire')); // lower screen's right ring: hold to fire, drag to aim (street level)
-function camMode() { return CAMS[app.profile.settings.camera] ? app.profile.settings.camera : 'street'; }
+function camMode() { if (app.camOverride) return app.camOverride; return CAMS[app.profile.settings.camera] ? app.profile.settings.camera : 'street'; }
 
 // Menu backdrop: the city, slowly panning.
 const backdrop = makeCity(20260);
@@ -184,7 +184,7 @@ function applyLayout() {
   const W = window.innerWidth, H = window.innerHeight;
   const pref = LAYOUTS[app.profile.settings.layout] ? app.profile.settings.layout : 'auto';
   const portrait = H > W;
-  const dual = !!app.session && (pref === 'dual' || (pref === 'auto' && portrait));
+  const dual = !!app.session && !app.session.cinematic && (pref === 'dual' || (pref === 'auto' && portrait));
   const b = document.body;
   b.classList.toggle('dual', dual);
   b.classList.toggle('dual-v', dual && portrait);
@@ -344,6 +344,27 @@ function renderMenu() {
   $('m-train').querySelector('span').textContent = p.points ? `${p.points} points to spend!` : 'Spend stat points';
 }
 tap($('m-story'), () => startLocal());
+tap($('m-show'), () => startShowcase());
+tap($('sc-shuffle'), () => startShowcase());
+tap($('sc-exit'), () => { endSession(); show('s-menu'); });
+
+// "Surprise Me": a random seeded cinematic. Plays in Ultra at street level without
+// changing the player's saved settings, then restores them on exit.
+function startShowcase(seed = Math.floor(Math.random() * 1e9)) {
+  if (app.session) endSession();
+  app.camOverride = 'street';
+  useGfx(app.gfx === 'classic' && app.profile.settings.gfx === 'classic' ? 'classic' : 'ultra');
+  const g = new ShowcaseGame(app, seed);
+  begin(g);
+  app.input.enabled = false;
+  $('hud').classList.add('hidden');
+  $('showcase').classList.remove('hidden');
+  $('sc-title').textContent = g.title;
+  $('sc-seed').textContent = `Seed #${g.seed}`;
+  const card = document.querySelector('.sc-card');
+  card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
+  return g;
+}
 tap($('m-multi'), () => show('s-multi'));
 tap($('m-char'), () => { draft = structuredClone(app.profile); openCreator(); });
 tap($('m-shop'), () => show('s-shop'));
@@ -510,7 +531,10 @@ function startLocal() {
   if (app.profile.questNum === 0) app.hud.dialog('Mayor Pix', `Welcome to Monstreets, ${app.profile.name}! Glitches are taking over the city. Walk up to me and press A for your first job.`);
 }
 function endSession() {
+  const wasShow = app.session && app.session.cinematic;
   if (app.session) app.session.close();
+  $('showcase').classList.add('hidden');
+  if (wasShow) { app.camOverride = null; useGfx(app.profile.settings.gfx); }
   if (pending) { pending.close(); pending = null; }
   app.session = null;
   app.input.enabled = false;
@@ -528,6 +552,14 @@ let helpT = 0;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  if (!app.manual) tick(dt, now);
+  requestAnimationFrame(frame);
+}
+// Recording hook: pause the real-time loop and advance exactly dt per call,
+// so a slow machine still produces a smooth fixed-rate video.
+let manualClock = 0;
+app.stepFrame = (dt) => { app.manual = true; manualClock += dt * 1000; tick(dt, manualClock); };
+function tick(dt, now) {
   const s = app.session;
   const r = app.renderer;
   if (s) {
@@ -563,9 +595,9 @@ function frame(now) {
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, sticks.width, sticks.height);
   if (s && app.input.enabled) { g.setTransform(r.dpr, 0, 0, r.dpr, 0, 0); app.input.draw(g); }
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 // Exposed for automated tests only.
 window.__monstreets = app;
+app.startShowcase = startShowcase;

@@ -2,7 +2,8 @@
 // NetGame talks to the server and interpolates its snapshots (multiplayer).
 import { World } from '../shared/sim.js';
 import { makeArena } from '../shared/maps.js';
-import { WEAPON_ORDER, ENEMY_ORDER, BULLET_KINDS, CREATURES, EVOLVE_LEVEL, grantXp } from '../shared/data.js';
+import { WEAPON_ORDER, ENEMY_ORDER, BULLET_KINDS, CREATURES, CREATURE_ORDER, EVOLVE_LEVEL, LOOK, LOOK_KEYS, WEAPONS, grantXp } from '../shared/data.js';
+import { mulberry32 } from '../shared/rng.js';
 import { toLoadout } from './save.js';
 import { wrapAngle } from './input.js';
 import { sfx } from './audio.js';
@@ -359,3 +360,128 @@ export class NetGame extends Session {
   }
 }
 
+
+// "Surprise Me": a seeded, self-playing cinematic. A random hero, partner creature,
+// weapons and enemy waves fight in the real World through the real renderer while a
+// bot drives the hero and the camera orbits. Uses a throwaway profile, so the
+// player's save is never touched. Same seed -> same cast.
+const SHOW_NAMES = ['Nova', 'Rook', 'Kai', 'Juno', 'Ash', 'Remy', 'Zola', 'Pax', 'Indy', 'Vale', 'Sage', 'Bodhi'];
+export class ShowcaseGame extends Session {
+  constructor(app, seed) {
+    super(app);
+    this.cinematic = true;
+    this.seed = seed >>> 0;
+    const R = mulberry32(this.seed ^ 0x5eed);
+    this.R = R;
+    const pick = (a) => a[Math.floor(R() * a.length)];
+    const look = {};
+    for (const k of LOOK_KEYS) look[k] = Math.floor(R() * LOOK[k].length);
+    const evolved = R() < 0.5;
+    this.profile = {
+      name: pick(SHOW_NAMES), look, companion: pick(CREATURE_ORDER), level: evolved ? 12 + Math.floor(R() * 20) : 4 + Math.floor(R() * 5),
+      xp: 0, coins: 0, points: 0, stats: { pow: 0, vit: 0, agi: 0 }, weapons: WEAPON_ORDER.slice(), questNum: 0,
+      best: { wave: 0, pvpWins: 0 }, settings: app.profile.settings,
+    };
+    this.mode = 'city';
+    this.world = new World({ mode: 'city', seed: CITY_SEED });
+    this.world.ambT = 1e9; // waves come from the director below
+    this.me = this.world.addPlayer(toLoadout(this.profile));
+    this.toughen();
+    this.acc = 0; this.t = 0; this.kills = 0; this.wave = 0;
+    this.wpnT = 2.5; this.strafe = R() < 0.5 ? 1 : -1;
+    this.camYaw = R() * Math.PI * 2; this.orbitDir = R() < 0.5 ? 1 : -1;
+    this.timeOfDay = ['golden', 'dawn', 'noon', 'night'][Math.floor(R() * 4)];
+    if (this.r.setTimeOfDay) this.r.setTimeOfDay(this.timeOfDay);
+    this.r.setMap(this.world.map);
+    this.r.snapCamera(this.me.x, this.me.y);
+    this.spawnWave();
+  }
+
+  toughen() { this.me.maxHp = this.me.hp = 1e6; } // the star never goes down
+
+  get title() {
+    const C = CREATURES[this.profile.companion];
+    const tod = { golden: 'Golden hour', dawn: 'Dawn', noon: 'Noon', night: 'Night' }[this.timeOfDay];
+    return `${this.profile.name} & ${this.profile.level >= EVOLVE_LEVEL ? C.evo : C.name} · ${tod}`;
+  }
+
+  spawnWave() {
+    const w = this.world, me = this.me, R = this.R;
+    this.wave++;
+    const n = 6 + Math.floor(R() * 5) + this.wave;
+    for (let i = 0; i < n; i++) {
+      const s = w.findSpot({ around: me, min: 230, max: 520 });
+      if (!s) continue;
+      const r = R();
+      const type = r < 0.45 ? 'zombie' : r < 0.7 ? 'runner' : r < 0.88 ? 'spitter' : 'brute';
+      w.spawnEnemy(type, s, { d: 2 + this.wave, boss: this.wave >= 2 && i === 0 && R() < 0.6 });
+    }
+  }
+
+  onLevel() { this.world.setLoadout(this.me, toLoadout(this.profile)); this.toughen(); }
+
+  // The bot: circle-strafe the nearest enemy at a comfortable range, aim and fire,
+  // and swap weapons now and then.
+  drive(dt) {
+    const me = this.me, R = this.R;
+    if (this.cheerT > 0) { Object.assign(me.input, { mx: 0, my: 0, fire: false, act: 0 }); return; }
+    let best = null, bd = Infinity;
+    for (const e of this.world.enemies) { const d = Math.hypot(e.x - me.x, e.y - me.y); if (!e.dead && d < bd) { bd = d; best = e; } }
+    let mx = 0, my = 0, ang = me.ang, fire = false;
+    if (best) {
+      ang = Math.atan2(best.y - me.y, best.x - me.x);
+      const radial = Math.max(-1, Math.min(1, (bd - 180) / 90));
+      const tang = ang + (Math.PI / 2) * this.strafe;
+      mx = Math.cos(tang) * 0.75 + Math.cos(ang) * radial * 0.8;
+      my = Math.sin(tang) * 0.75 + Math.sin(ang) * radial * 0.8;
+      fire = bd < 420;
+    }
+    if ((this.wpnT -= dt) <= 0) {
+      this.wpnT = 2.5 + R() * 2;
+      const usable = me.weapons.filter((w) => me.ammo[w] > 0);
+      this.wantWpn = usable[Math.floor(R() * usable.length)] || 'pistol';
+      if (R() < 0.3) this.strafe = -this.strafe;
+    }
+    Object.assign(me.input, { mx, my, ang, fire, wpn: this.wantWpn, act: 0 });
+  }
+
+  update(dt) {
+    this.t += dt;
+    this.drive(dt);
+    this.acc = Math.min(this.acc + dt, 0.25);
+    while (this.acc >= STEP) {
+      this.world.step(STEP);
+      this.acc -= STEP;
+      const ev = this.world.events.splice(0);
+      for (const e of ev) if (e.t === 'die') this.kills++;
+      this.handleEvents(ev, this.me.id);
+    }
+    // wave cleared: cheer, then send the next one
+    if (this.cheerT > 0) {
+      this.cheerT -= dt;
+      if (this.cheerT <= 0) this.spawnWave();
+    } else if (this.world.enemies.length === 0) this.cheerT = 2.0;
+    this.me.emote = this.cheerT > 0 ? 1 : 0;
+    // cinematic camera: slow orbit, then over the shoulder, then orbit the other way
+    const phase = Math.floor(this.t / 5) % 3;
+    let target;
+    if (phase === 1) target = this.me.ang;
+    else { this.orbit = (this.orbit || 0) + dt * 0.42 * (phase === 0 ? this.orbitDir : -this.orbitDir); target = this.camYaw + this.orbit; }
+    this.viewYaw = this.viewYaw === undefined ? target : wrapAngle(this.viewYaw + wrapAngle(target - this.viewYaw) * Math.min(1, dt * (phase === 1 ? 3 : 6)));
+  }
+
+  scene() {
+    const w = this.world, me = this.me;
+    me.hurtFlash = 0;
+    return {
+      me, players: w.players, multi: false, pvp: false, showMini: false, camYaw: this.viewYaw, cinematic: true,
+      enemies: w.enemies.map((e) => ({ id: e.id, type: e.type, x: e.x, y: e.y, ang: e.ang, boss: e.boss, hpPct: Math.max(1, Math.round((e.hp / e.maxHp) * 100)) })),
+      bullets: w.bullets, pickups: w.pickups,
+      cars: w.cars.map((c) => ({ ...c, driverName: '' })),
+      npcs: w.npcs, questTarget: null, questDest: null,
+    };
+  }
+
+  hudState() { return null; }
+  close() { this.closed = true; if (this.r.setTimeOfDay) this.r.setTimeOfDay('golden'); }
+}

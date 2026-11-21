@@ -21,6 +21,8 @@ import { T, tileAt } from '../shared/maps.js';
 import { charSprite, petSprite, enemySprite, pickupSprite, renderMini, CAR_COLORS } from './art.js';
 import { MapScene, UltraScene } from './scenery3d.js';
 import { ModelKit, buildCharacter, buildNPC, poseCharacter, buildCreature, poseCreature, buildEnemy, poseEnemy, buildPickup, posePickup, buildCar } from './models3d.js';
+import { poseHuman } from './human3d.js';
+import { CREATURE_STRIDE, ENEMY_STRIDE } from './creatures3d.js';
 
 const PITCH = (54 * Math.PI) / 180; // overhead camera looks down at 54 degrees
 const FOV = 34;
@@ -28,6 +30,13 @@ const STREET_FOV = 60;
 const PUSH = 26; // overhead sprites are slid toward the camera so they never clip into walls
 const SUN = new THREE.Vector3(-170, 420, 230); // overhead: sun offset from the camera target
 const SUN_LOW = new THREE.Vector3(-620, 330, 420).normalize(); // detailed city: golden-hour sun direction
+// Time-of-day presets for the detailed city (the game uses golden hour; the showcase picks one).
+const TOD = {
+  golden: { dir: [-620, 330, 420], sky: [3.2, 2.6, 0.004], sun: ['#ffc98e', 2.4], hemi: ['#a9c0ea', '#6b4a3a', 0.55], fog: '#a8836f', env: 0.4, exp: 0.78 },
+  dawn: { dir: [640, 210, -260], sky: [2.0, 3.2, 0.005], sun: ['#ffb0c4', 1.9], hemi: ['#c4b8f2', '#5a4058', 0.62], fog: '#b98d9e', env: 0.45, exp: 0.85 },
+  noon: { dir: [-220, 900, 300], sky: [1.8, 1.4, 0.003], sun: ['#fff4e2', 2.8], hemi: ['#b8d4ff', '#7a6a58', 0.7], fog: '#93a9bd', env: 0.45, exp: 0.6 },
+  night: { dir: [-420, -60, 300], moon: [-420, 520, 300], sky: [1.2, 0.4, 0.002], sun: ['#9fb4ff', 0.55], hemi: ['#34467a', '#0e0e18', 0.4], fog: '#151b30', env: 0.18, exp: 1.15 },
+};
 
 const BULLET_COLORS = {
   pistol: ['#fff3a0', 3], uzi: ['#ffe066', 2.5], shotgun: ['#ffcf70', 2.5], rifle: ['#ffffff', 3], rocket: ['#ff7a3a', 5],
@@ -98,6 +107,7 @@ export class Renderer3D {
     this.kind = '3d';
     this.quality = quality;
     this.cameraMode = camera;
+    this.tod = 'golden';
     this.glCv = glCanvas;
     this.cv = overlayCanvas;
     this.g = overlayCanvas.getContext('2d');
@@ -192,12 +202,13 @@ export class Renderer3D {
     this.gl.shadowMap.enabled = shadows;
     this.sun.castShadow = shadows;
     this.gl.toneMapping = this.ultra ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
-    this.gl.toneMappingExposure = 0.78;
+    this.gl.toneMappingExposure = (TOD[this.tod] || TOD.golden).exp;
     if (this.ultra && !this.composer) this.buildComposer();
     // materials must recompile when shadows or tone mapping change
     const touch = (root) => root.traverse((o) => { if (o.material) for (const m of [].concat(o.material)) m.needsUpdate = true; });
     touch(this.scene);
     for (const ms of this.sceneCache.values()) touch(ms.group);
+    this.flushDying();
     this.models.clear();
     this.resize();
     if (this.map) this.setMap(this.map, true);
@@ -218,7 +229,7 @@ export class Renderer3D {
   // Sky rendered once into a cube map: the background and the reflections on
   // paint, glass and water (PBR environment). City = golden hour; arena = neon dusk.
   skyEnvironment(city) {
-    const key = city ? 'city' : 'arena';
+    const key = city ? 'city:' + this.tod : 'arena';
     this.envCache = this.envCache || {};
     if (this.envCache[key]) return this.envCache[key];
     const skyScene = new THREE.Scene();
@@ -226,8 +237,9 @@ export class Renderer3D {
       const sky = new Sky();
       sky.scale.setScalar(1000);
       const u = sky.material.uniforms;
-      u.turbidity.value = 3.2; u.rayleigh.value = 2.6; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.82;
-      u.sunPosition.value.copy(SUN_LOW).multiplyScalar(1000);
+      const P = TOD[this.tod] || TOD.golden;
+      u.turbidity.value = P.sky[0]; u.rayleigh.value = P.sky[1]; u.mieCoefficient.value = P.sky[2]; u.mieDirectionalG.value = 0.82;
+      u.sunPosition.value.set(...P.dir).normalize().multiplyScalar(1000);
       skyScene.add(sky);
     } else {
       const m = new THREE.ShaderMaterial({
@@ -303,6 +315,7 @@ export class Renderer3D {
       this.models.prewarm('enspitter0', () => buildEnemy('spitter', false), 3);
       this.models.prewarm('enbrute0', () => buildEnemy('brute', false), 2);
     }
+    if (changed) this.flushDying();
     if (changed || !force) { this.parts = []; this.texts = []; this.rings = []; }
     this.street.ready = false;
   }
@@ -313,15 +326,17 @@ export class Renderer3D {
       const sky = this.skyEnvironment(city);
       s.background = sky.background;
       s.environment = sky.env;
-      s.environmentIntensity = city ? 0.4 : 0.7;
-      const fogCol = city ? '#a8836f' : '#2a1b3a';
+      const P = TOD[this.tod] || TOD.golden;
+      s.environmentIntensity = city ? P.env : 0.7;
+      const fogCol = city ? P.fog : '#2a1b3a';
+      if (this.ultra) this.gl.toneMappingExposure = city ? P.exp : 0.78;
       const street = this.cameraMode === 'street';
       s.fog = street ? new THREE.Fog(fogCol, 750, 2800) : new THREE.Fog(fogCol, this.dist * 1.4, this.dist * 3.4);
-      this.hemi.color.set(city ? '#a9c0ea' : '#8e7fd8');
-      this.hemi.groundColor.set(city ? '#6b4a3a' : '#2a2140');
-      this.hemi.intensity = city ? 0.55 : 0.7;
-      this.sun.color.set(city ? '#ffc98e' : '#c6b6ff');
-      this.sun.intensity = city ? 2.4 : 1.5;
+      this.hemi.color.set(city ? P.hemi[0] : '#8e7fd8');
+      this.hemi.groundColor.set(city ? P.hemi[1] : '#2a2140');
+      this.hemi.intensity = city ? P.hemi[2] : 0.7;
+      this.sun.color.set(city ? P.sun[0] : '#c6b6ff');
+      this.sun.intensity = city ? P.sun[1] : 1.5;
       if (!this.ultra) { this.hemi.intensity *= 1.4; this.sun.intensity *= 0.85; } // no tone mapping: keep it bright
     } else {
       const sky = city ? '#a9dcf5' : '#2a2342';
@@ -367,6 +382,7 @@ export class Renderer3D {
     if (this.texts.length > 80) this.texts.shift();
   }
   effect(e, meId) {
+    if (this.detailed && ['shot', 'pshot', 'atk', 'hit', 'hurt', 'die', 'pdie'].includes(e.t)) (this.animQ || (this.animQ = [])).push(e);
     switch (e.t) {
       case 'hit': this.burst(e.x, e.y, '#ffffff', 4, 90, 0.3, 2); this.floatText(e.x, e.y, String(e.d), '#ffe066'); break;
       case 'die': this.burst(e.x, e.y, e.boss ? '#ffd23f' : '#b48cff', e.boss ? 40 : 14, e.boss ? 220 : 140, 0.7, 4); if (e.boss) this.shake = 0.5; break;
@@ -448,7 +464,7 @@ export class Renderer3D {
     this.camera.position.set(tx, D * Math.sin(PITCH), tz + D * Math.cos(PITCH));
     this.camera.lookAt(tx, 0, tz);
     this.camera.updateMatrixWorld();
-    this.placeSun(tx, tz, this.detailed ? SUN_LOW.clone().multiplyScalar(700) : SUN, 520);
+    this.placeSun(tx, tz, this.detailed ? this.sunDir().multiplyScalar(700) : SUN, 520);
     return { x0: tx - D * 1.2, x1: tx + D * 1.2, y0: tz - D * 1.6, y1: tz + D * 0.8 };
   }
 
@@ -487,7 +503,7 @@ export class Renderer3D {
     this.camera.position.set(S.x + shx, S.y, S.z + shz);
     this.camera.lookAt(px + fx * 90 + sx * 0.6, 21, pz + fz * 90 + sz * 0.6);
     this.camera.updateMatrixWorld();
-    this.placeSun(px + fx * 220, pz + fz * 220, SUN_LOW.clone().multiplyScalar(900), 620);
+    this.placeSun(px + fx * 220, pz + fz * 220, this.sunDir().multiplyScalar(900), 620);
     return { street: true, px, pz, r: 1500 };
   }
 
@@ -500,8 +516,19 @@ export class Renderer3D {
     this.camera.position.set(cx, 330, cz);
     this.camera.lookAt(W / 2, 60, H / 2);
     this.camera.updateMatrixWorld();
-    this.placeSun(W / 2, H / 2, SUN_LOW.clone().multiplyScalar(900), 900);
+    this.placeSun(W / 2, H / 2, this.sunDir().multiplyScalar(900), 900);
     return { street: true, px: W / 2, pz: H / 2, r: 4000 };
+  }
+
+  // Direction the key light comes from (the moon at night).
+  sunDir() {
+    const P = (this.map && this.map.kind === 'city' && TOD[this.tod]) || TOD.golden;
+    return new THREE.Vector3(...(P.moon || P.dir)).normalize();
+  }
+
+  setTimeOfDay(name) {
+    this.tod = TOD[name] ? name : 'golden';
+    if (this.map) this.setLighting(this.map.kind === 'city');
   }
 
   placeSun(tx, tz, off, box) {
@@ -586,8 +613,65 @@ export class Renderer3D {
     this.drawOverlay(scene, dt, street);
   }
 
+  flushDying() { for (const d of this.dying || []) this.models.release(null, d.e); this.dying = []; this.animQ = []; }
+
+  // Routes simulation events to the right model's animation state (detailed models only).
+  applyAnimEvents() {
+    const K = this.models, q = this.animQ || [];
+    this.animQ = [];
+    for (const ev of q) {
+      let e;
+      switch (ev.t) {
+        case 'shot': if ((e = K.live.get('p' + ev.pid))) { e.recoil = 1; e.lastShot = this.time; } break;
+        case 'pshot': if ((e = K.live.get('pet' + ev.pid))) e.attack = 1; break;
+        case 'atk': if ((e = K.live.get('e' + ev.id))) e.attack = 1; break;
+        case 'hit': if ((e = K.live.get('e' + ev.id))) e.flinch = 1; break;
+        case 'hurt': if ((e = K.live.get('p' + ev.pid))) e.flinch = 1; break;
+        case 'die': if ((e = K.detach('e' + ev.id))) this.dying.push({ e, kind: ev.k, t0: this.time, ang: -e.obj.rotation.y }); break;
+        case 'pdie': if ((e = K.detach('p' + ev.pid))) this.dying.push({ e, kind: 'human', t0: this.time, ang: -e.obj.rotation.y }); break;
+        default:
+      }
+    }
+  }
+
+  // Death animations play on detached models, then return them to the pool.
+  updateDying() {
+    const keep = [];
+    for (const d of this.dying) {
+      const age = this.time - d.t0, o = d.e.obj, u = o.userData;
+      const k = Math.min(1, age / 0.55), fall = k * k; // accelerating fall
+      const sink = age > 1.1 ? (age - 1.1) * 28 : 0;
+      if (d.kind === 'human' || d.kind === 'zombie') { // topple backwards, settle, sink away
+        const bounce = k >= 1 ? Math.sin(Math.min(1, (age - 0.55) / 0.25) * Math.PI) * 0.06 : 0;
+        o.quaternion.setFromEuler(new THREE.Euler(0, -d.ang, fall * 1.48 - bounce, 'YZX'));
+        o.position.y = -sink;
+        const rig = u.human || o;
+        if (rig.userData.legs) poseHuman(rig, { phase: 0, moving: false, t: d.t0, armed: false, hurt: 0 });
+        if (d.kind === 'zombie') o.visible = !(age > 0.8 && Math.sin(age * 60) > 0.2); // glitches out
+      } else if (d.kind === 'brute') { // crumbles forward and sinks
+        o.quaternion.setFromEuler(new THREE.Euler(0, -d.ang, -fall * 0.9, 'YZX'));
+        o.position.y = -sink * 1.4 - fall * 4;
+      } else if (d.kind === 'runner') { // flips and shrinks
+        o.rotation.x = age * 14;
+        o.scale.setScalar((u.baseScale || 1) * Math.max(0.01, 1 - age / 0.9));
+        o.position.y = Math.sin(Math.min(1, age / 0.9) * Math.PI) * 10;
+      } else { // spitter: melts flat
+        const f = Math.min(1, age / 0.8);
+        const b = u.baseScale || 1;
+        o.scale.set(b * (1 + f * 0.4), b * Math.max(0.05, 1 - f * 0.95), b * (1 + f * 0.4));
+        o.position.y = -sink * 0.4;
+      }
+      if (age > 1.6) this.models.release(null, d.e);
+      else keep.push(d);
+    }
+    this.dying = keep;
+  }
+
   drawModels(scene, dt, vis) {
     const K = this.models, t = this.time;
+    this.dying = this.dying || [];
+    this.applyAnimEvents();
+    this.updateDying();
     for (const c of scene.cars) {
       if (!vis(c)) continue;
       const e = K.get('c' + c.id, 'car' + c.color, () => buildCar(c.color));
@@ -599,7 +683,7 @@ export class Renderer3D {
       const e = K.get('n' + n.id, 'npc' + JSON.stringify(n.look), () => buildNPC(n.look));
       e.obj.position.set(n.x, 0, n.y);
       e.obj.rotation.y = -(n.ang ?? Math.PI / 2);
-      poseCharacter(e.obj, { phase: 0, moving: false, wpn: 'pistol', hurt: 0, t: t + n.id, armed: false });
+      poseCharacter(e.obj, { phase: 0, moving: false, wpn: 'pistol', hurt: 0, t: t + n.id, armed: false, seed: n.id });
     }
     for (const k of scene.pickups) {
       if (!vis(k)) continue;
@@ -610,26 +694,31 @@ export class Renderer3D {
     for (const en of scene.enemies) {
       if (!vis(en)) continue;
       const e = K.get('e' + en.id, `en${en.type}${en.boss ? 1 : 0}`, () => buildEnemy(en.type, en.boss));
-      const moving = K.step(e, en.x, en.y, dt);
+      const moving = K.step(e, en.x, en.y, dt, ENEMY_STRIDE[en.type] || 30);
+      K.tick(e, dt);
       e.obj.position.set(en.x, 0, en.y);
       e.obj.rotation.y = -en.ang;
-      poseEnemy(e.obj, { phase: e.phase, moving, t: t + en.id });
+      poseEnemy(e.obj, { phase: e.phase, moving, spd: e.spd, t: t + en.id, attack: e.attack > 0 ? 1 - e.attack : 0, flinch: e.flinch, seed: en.id % 17 });
     }
     for (const p of scene.players) {
       if (p.dead) continue;
       if (p.pet && !p.car && vis(p.pet)) { // the companion rides along (hidden) while you drive
         const e = K.get('pet' + p.id, `cr${p.petType}${p.evolved ? 1 : 0}`, () => buildCreature(p.petType, p.evolved));
-        const moving = K.step(e, p.pet.x, p.pet.y, dt);
+        const moving = K.step(e, p.pet.x, p.pet.y, dt, CREATURE_STRIDE[p.petType] || 34);
+        K.tick(e, dt);
         e.obj.position.set(p.pet.x, 0, p.pet.y);
         e.obj.rotation.y = -p.ang;
-        poseCreature(e.obj, { phase: e.phase, moving, t: t + p.id });
+        poseCreature(e.obj, { phase: e.phase, moving, spd: e.spd, t: t + p.id, attack: e.attack > 0 ? 1 - e.attack : 0 });
       }
       if (p.car || !vis(p)) continue;
       const e = K.get('p' + p.id, 'ch' + JSON.stringify(p.look), () => buildCharacter(p.look));
-      const moving = K.step(e, p.x, p.y, dt) || p.moving;
+      const moving = K.step(e, p.x, p.y, dt, 56) || p.moving;
+      K.tick(e, dt);
+      const lowTarget = (this.time - (e.lastShot ?? -9)) > 1.0 && e.spd > 110 ? 1 : 0;
+      e.low = (e.low || 0) + (lowTarget - (e.low || 0)) * Math.min(1, dt * 6);
       e.obj.position.set(p.x, 0, p.y);
       e.obj.rotation.y = -p.ang;
-      poseCharacter(e.obj, { phase: e.phase, moving, wpn: p.wpn, hurt: p.hurtFlash || 0, t: t + p.id, motion: [e.mx, e.my], ang: p.ang });
+      poseCharacter(e.obj, { phase: e.phase, moving, spd: e.spd, wpn: p.wpn, hurt: p.hurtFlash || 0, t: t + p.id, motion: [e.mx, e.my], ang: p.ang, recoil: e.recoil, flinch: e.flinch, low: e.low, emote: p.emote || 0, seed: p.id });
     }
   }
 
@@ -810,7 +899,7 @@ export class Renderer3D {
       g.globalAlpha = 1;
     }
     this.texts = this.texts.filter((t) => t.life > 0);
-    if (street && me && !me.car && !me.dead) this.crosshair(me);
+    if (street && me && !me.car && !me.dead && !scene.cinematic) this.crosshair(me);
     if (scene.questTarget && me) this.drawArrow(scene.questTarget, me, street ? scene.camYaw || 0 : null);
     if (scene.showMini && me) this.drawMini(scene, me, street ? scene.camYaw || 0 : null);
     if (me && me.hurtFlash > 0) {
