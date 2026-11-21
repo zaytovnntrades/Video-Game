@@ -287,3 +287,10 @@ test('progression: XP, levels and unlocks', async () => {
   assert.deepEqual(lockedParts(s, 2).sort(), ['wings']);
   assert.deepEqual(lockedParts(s, 7), []);
 });
+
+test('an ASCEND tap during a busy move is buffered briefly', () => {
+  const f = new Fight({ specs: [defaultSpec(), defaultSpec()], seed: 3 });
+  f.f[0].meter = 100; f.f[0].set('blastrec'); // busy for 8 ticks
+  run(f, 70, tapAt('special', 1));
+  assert.equal(f.f[0].stage, 1);
+});

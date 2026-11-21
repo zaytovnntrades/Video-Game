@@ -181,3 +181,4 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: 
 .meter .fill.asc { background: linear-gradient(90deg, #8f3dff, var(--stage, var(--meter-asc))); box-shadow: 0 0 10px var(--stage, var(--meter-asc)); }
 .opt.locked b { color: var(--dim); }
 .lock { font-size: 11px; color: var(--accent); margin-left: 6px; }
+.b-special { font-size: 9px !important; line-height: 1.1; }

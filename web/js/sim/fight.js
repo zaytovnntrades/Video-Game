@@ -133,6 +133,7 @@ export class Fight {
     const heldFor = {};
     for (const k of ['atk', 'blast', 'dash', 'jump', 'special']) { heldFor[k] = f.hold[k]; f.hold[k] = inp[k] ? f.hold[k] + 1 : 0; if (!inp[k]) f.used[k] = false; }
     if (press('guard')) f.guardPress = this.tick;
+    if (heldFor.special > 0 && release('special') && heldFor.special < HOLD) f.specialTap = this.tick; // buffered: works if tapped mid-move
     if (f.cd > 0) f.cd--;
     // facing: always locked on the rival
     const d = sub(o.chest, f.chest);
@@ -157,12 +158,12 @@ export class Fight {
         // special: tap = ascend one stage; hold (or tap at stage III) = Apex finisher
         // (APEX_COST - 1: an ascended aura drains a sliver every tick)
         const apexReady = f.stage > 0 && f.meter >= APEX_COST - 1;
-        const tapSpecial = heldFor.special > 0 && release('special') && heldFor.special < HOLD;
+        const tapSpecial = this.tick - (f.specialTap ?? -999) <= 20;
         if ((inp.special && f.hold.special >= HOLD && !f.used.special && apexReady) || (tapSpecial && f.stage === 3 && apexReady)) {
-          f.used.special = true; f.meter = 0; f.set('apex'); f.vel = v3(); this.emit({ t: 'apexStart', who: f.side }); break;
+          f.used.special = true; f.specialTap = -999; f.meter = 0; f.set('apex'); f.vel = v3(); this.emit({ t: 'apexStart', who: f.side }); break;
         }
         if (tapSpecial && f.stage < 3 && f.meter >= ASCEND_COSTS[f.stage]) {
-          f.meter -= ASCEND_COSTS[f.stage]; f.nextStage = f.stage + 1; f.set('ascending'); f.vel = v3();
+          f.specialTap = -999; f.meter -= ASCEND_COSTS[f.stage]; f.nextStage = f.stage + 1; f.set('ascending'); f.vel = v3();
           this.emit({ t: 'ascend', who: f.side, stage: f.nextStage }); break;
         }
         if (inp.guard && f.state !== 'charge') { if (f.state !== 'guard') f.set('guard'); f.vel.x *= 0.7; f.vel.z *= 0.7; if (f.flying) f.vel.y *= 0.7; break; }

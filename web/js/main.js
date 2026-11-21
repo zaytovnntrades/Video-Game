@@ -443,7 +443,9 @@ class App {
     }
     $('#hud-timer').textContent = Math.ceil(view.timer);
     const me = view.f[0];
-    if (me.stage > 0 && me.meter >= APEX_COST - 1) this.input.setSpecial(me.stage === 3 ? 'APEX' : 'HOLD: APEX', true);
+    const apexReady = me.stage > 0 && me.meter >= APEX_COST - 1;
+    if (apexReady && me.stage === 3) this.input.setSpecial('APEX', true);
+    else if (apexReady) this.input.setSpecial('TAP ' + ROMAN[me.stage + 1] + ' · HOLD APEX', true); // both are possible
     else if (me.stage < 3) this.input.setSpecial('ASCEND ' + ROMAN[me.stage + 1], me.meter >= ASCEND_COSTS[me.stage]);
     else this.input.setSpecial('APEX', false);
     // off-screen rival marker

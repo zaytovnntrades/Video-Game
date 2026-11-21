@@ -14,7 +14,7 @@ import { RENDER } from './fighter3d.js';
 export const STAGES = {
   highlands: { name: 'Sunlit Highlands', ground: 'grass', tint: ['#7aa24f', '#5d8a3c', '#9bb860'], rock: '#9c8a74', rockTop: '#6f9a45', hill: '#6c9446', sun: [42, 145], sunColor: '#fff1dc', turbidity: 5, rayleigh: 1.4, fog: '#bcd3e8', fogD: 0.0022, grass: ['#3d6a24', '#a6cf62', 0.5], trees: 'leafy', exposure: 0.55 },
   dusk: { name: 'Crimson Dusk', ground: 'dirt', tint: ['#b58a64', '#9c7150', '#c99c72'], rock: '#8a5e4a', rockTop: '#a77b58', hill: '#8c6446', sun: [5, 200], sunColor: '#ffb27a', turbidity: 9, rayleigh: 3.0, fog: '#c98a72', fogD: 0.0026, grass: ['#6b5a2e', '#c9a85d', 0.42], trees: 'dead', exposure: 0.7 },
-  glacier: { name: 'Frost Expanse', ground: 'snow', tint: ['#eef3f8', '#dfe8f1', '#f7fbff'], rock: '#7d8ea5', rockTop: '#eef4fa', hill: '#e9f0f7', sun: [24, 120], sunColor: '#f4f8ff', turbidity: 2, rayleigh: 0.9, fog: '#d7e4f0', fogD: 0.0024, grass: null, trees: 'pine', exposure: 0.5 },
+  glacier: { name: 'Frost Expanse', ground: 'snow', tint: ['#eef3f8', '#dfe8f1', '#f7fbff'], rock: '#7d8ea5', rockTop: '#eef4fa', hill: '#e9f0f7', sun: [24, 120], sunColor: '#f4f8ff', turbidity: 2, rayleigh: 0.9, fog: '#d7e4f0', fogD: 0.0013, grass: null, trees: 'pine', exposure: 0.4 },
 };
 
 // smooth 2D noise for terrain shapes

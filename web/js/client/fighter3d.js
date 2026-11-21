@@ -271,7 +271,7 @@ export class FighterModel {
         cloth: () => new THREE.MeshStandardMaterial({ color: hex(color), map: T.cotton[0], normalMap: T.cotton[1], normalScale: new THREE.Vector2(0.4, 0.4), roughness: 0.9 }),
         canvas: () => new THREE.MeshStandardMaterial({ color: hex(color), map: T.canvas[0], normalMap: T.canvas[1], normalScale: new THREE.Vector2(0.55, 0.55), roughness: 0.92 }),
         leather: () => new THREE.MeshStandardMaterial({ color: hex(color), map: T.leather[0], normalMap: T.leather[1], normalScale: new THREE.Vector2(0.5, 0.5), roughness: 0.45 }),
-        metal: () => new THREE.MeshStandardMaterial({ color: hex(color), map: T.leather[0], normalMap: T.leather[1], normalScale: new THREE.Vector2(0.15, 0.15), roughness: 0.32, metalness: 0.75 }),
+        metal: () => new THREE.MeshStandardMaterial({ color: hex(color).multiplyScalar(0.8), map: T.leather[0], normalMap: T.leather[1], normalScale: new THREE.Vector2(0.15, 0.15), roughness: 0.42, metalness: 0.7, envMapIntensity: 0.6 }),
         hair: () => new THREE.MeshStandardMaterial({ color: hex(color), map: T.hair[0], normalMap: T.hair[1], normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.42 }),
         plain: () => new THREE.MeshStandardMaterial({ color: hex(color), roughness: opts.rough ?? 0.5 }),
       };
@@ -550,7 +550,7 @@ export class FighterModel {
       case 'Long Spikes':
         cap();
         for (let i = 0; i < 11; i++) this.clump([-0.8 + i * 0.16, 0.1 - R(i) * 0.3, -1], 0.34 + R(i + 1) * 0.12, 0.045, { droop: 0.55, back: 0.3 });
-        for (let i = 0; i < 5; i++) this.clump([-0.5 + i * 0.25, 0.55, 1], 0.09, 0.03, { droop: 0.4 });
+        for (let i = 0; i < 5; i++) this.clump([-0.5 + i * 0.25, 0.85, 1], 0.07, 0.028, { droop: 0.12 }); // short fringe, clear of the eyes
         break;
       case 'Wild Mane':
         cap(1.03);
@@ -665,7 +665,11 @@ export class FighterModel {
       for (const s of [-1, 1]) this.part(new THREE.SphereGeometry(0.27, 12, 10), fur, F, { pos: [1.45, -0.66, s * 0.2] });
       for (const s of [-1, 1]) for (let k = 0; k < 3; k++) this.part(new THREE.CylinderGeometry(0.008, 0.008, 1.1, 4), dark, F, { pos: [1.5, -0.62 + k * 0.08, s * 0.75], rot: [s * (1.45 + k * 0.08), 0, 0], outline: false });
     }
-    if (C.snout === 3) this.part(new THREE.SphereGeometry(1, 20, 14), skinM, F, { pos: [1.65, -0.68, 0], scale: [1.1, 0.42, 0.72] }); // lizard
+    if (C.snout === 3) { // lizard: a long, flat, tapering snout with nostrils
+      const g = new THREE.CylinderGeometry(0.22, 0.62, 1.5, 18, 4); g.rotateZ(-Math.PI / 2);
+      this.part(g, skinM, F, { pos: [1.85, -0.62, 0], scale: [1, 0.58, 1] });
+      for (const s of [-1, 1]) this.part(new THREE.SphereGeometry(0.05, 6, 4), dark, F, { pos: [2.6, -0.52, s * 0.1], outline: false });
+    }
     if (C.snout === 4) { // beak
       const beak = this.mat('plain', '#d99a2b', { rough: 0.35 });
       this.part(new THREE.ConeGeometry(0.42, 1.25, 16), beak, F, { pos: [2.0, -0.5, 0], rot: [0, 0, -Math.PI / 2 - 0.25], scale: [1, 1, 0.8] });
@@ -676,8 +680,8 @@ export class FighterModel {
       this.part(new THREE.SphereGeometry(0.2, 12, 10), dark, F, { pos: [2.05, -0.48, 0], scale: [1, 0.8, 1.3] });
     }
     // fangs
-    if (C.fangs) for (const s of [-1, 1]) {
-      const pos = C.snout === 1 ? [2.0, -0.9, s * 0.22] : C.snout === 3 ? [2.1, -0.85, s * 0.3] : [1.43, -1.02, s * 0.12];
+    if (C.fangs && C.snout !== 4) for (const s of [-1, 1]) { // (beaks have no teeth)
+      const pos = { 1: [2.0, -0.9, s * 0.22], 3: [2.2, -0.82, s * 0.2], 5: [1.85, -0.92, s * 0.15] }[C.snout] || [1.43, -1.02, s * 0.12];
       this.part(new THREE.ConeGeometry(0.055, 0.26, 8), bone, F, { pos, rot: [Math.PI, 0, 0], outline: false });
     }
     // horns
